@@ -310,15 +310,34 @@ def touch_activity(user_id: int) -> None:
 def ensure_character(
     name: str,
     *,
+    slug: str | None = None,
     fandom: str | None = None,
     info_short: str | None = None,
     photo_id: str | None = None,
     photo_path: str | None = None,
 ) -> int:
-    r = _q("SELECT id FROM characters WHERE name=?", (name,)).fetchone()
+    from app.config import BASE_DIR
+
+    r = _q(
+        "SELECT id, slug, photo_path FROM characters WHERE name=?", (name,)
+    ).fetchone()
+
+    # --- auto photo search by slug ---
+    slug_to_use = slug or (r["slug"] if r else None)
+    if photo_path is None and slug_to_use and (not r or not r["photo_path"]):
+        media_dir = Path(BASE_DIR) / "media" / "characters"
+        for ext in ("jpg", "png"):
+            fp = media_dir / f"{slug_to_use}.{ext}"
+            if fp.exists():
+                photo_path = fp.as_posix()
+                break
+
     if r:
-        fields = []
+        fields: list[str] = []
         params: list[Any] = []
+        if slug is not None and slug != r["slug"]:
+            fields.append("slug=?")
+            params.append(slug)
         if info_short is not None:
             fields.append("info_short=?")
             params.append(info_short)
@@ -328,16 +347,19 @@ def ensure_character(
         if photo_id is not None:
             fields.append("photo_id=?")
             params.append(photo_id)
-        if photo_path is not None:
+        if photo_path is not None and photo_path != r["photo_path"]:
             fields.append("photo_path=?")
             params.append(photo_path)
         if fields:
             params.append(r["id"])
-            _exec(f"UPDATE characters SET {', '.join(fields)} WHERE id=?", tuple(params))
+            _exec(
+                f"UPDATE characters SET {', '.join(fields)} WHERE id=?",
+                tuple(params),
+            )
         return int(r["id"])
     cur = _exec(
-        "INSERT INTO characters(name, fandom, info_short, photo_id, photo_path) VALUES (?,?,?,?,?)",
-        (name, fandom, info_short, photo_id, photo_path),
+        "INSERT INTO characters(name, slug, fandom, info_short, photo_id, photo_path) VALUES (?,?,?,?,?,?)",
+        (name, slug, fandom, info_short, photo_id, photo_path),
     )
     return int(cur.lastrowid)
 
