@@ -1,72 +1,26 @@
-import sys
-import types
 
-aiogram = types.ModuleType("aiogram")
+import asyncio
+import pytest
 
-class Router:
-    def __init__(self, name: str | None = None):
-        self.name = name
-    def message(self, *args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
-    def callback_query(self, *args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
+@pytest.fixture
+def event_loop():
+    loop = asyncio.new_event_loop()
+    yield loop
+    loop.close()
 
-class FObj:
-    def __getattr__(self, name):
-        return self
-    def __eq__(self, other):
-        return self
+@pytest.hookimpl(tryfirst=True)
+def pytest_configure(config):
+    config.addinivalue_line("markers", "asyncio: mark test to run asynchronously")
 
-F = FObj()
+@pytest.hookimpl(tryfirst=True)
+def pytest_pyfunc_call(pyfuncitem):
+    marker = pyfuncitem.get_closest_marker("asyncio")
+    if marker is not None:
+        loop = pyfuncitem.funcargs.get('event_loop')
+        if loop is None:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        funcargs = {name: pyfuncitem.funcargs[name] for name in pyfuncitem._fixtureinfo.argnames}
+        loop.run_until_complete(pyfuncitem.obj(**funcargs))
+        return True
 
-filters = types.ModuleType("filters")
-
-class Command:
-    def __init__(self, *args, **kwargs):
-        pass
-
-filters.Command = Command
-
-# types submodule
-atypes = types.ModuleType("types")
-
-class Message:
-    pass
-
-class CallbackQuery:
-    pass
-
-atypes.Message = Message
-atypes.CallbackQuery = CallbackQuery
-
-input_file = types.ModuleType("input_file")
-
-class FSInputFile:
-    pass
-
-input_file.FSInputFile = FSInputFile
-atypes.input_file = input_file
-
-# exceptions submodule
-exceptions = types.ModuleType("exceptions")
-
-class TelegramBadRequest(Exception):
-    pass
-
-exceptions.TelegramBadRequest = TelegramBadRequest
-
-aiogram.Router = Router
-aiogram.F = F
-aiogram.filters = filters
-aiogram.types = atypes
-aiogram.exceptions = exceptions
-
-sys.modules.setdefault("aiogram", aiogram)
-sys.modules.setdefault("aiogram.filters", filters)
-sys.modules.setdefault("aiogram.types", atypes)
-sys.modules.setdefault("aiogram.types.input_file", input_file)
-sys.modules.setdefault("aiogram.exceptions", exceptions)

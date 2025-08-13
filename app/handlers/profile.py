@@ -9,9 +9,9 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from app import storage
 from app.config import settings
-from app.handlers.balance import _balance_text
 from app.scheduler import rebuild_user_jobs
-from app.utils.tz import tz_keyboard
+from app.handlers.balance import _balance_text
+
 
 
 
