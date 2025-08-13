@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import re
 
 from aiogram import Router, F
 from aiogram.enums import ChatAction
@@ -18,14 +17,9 @@ from app.scheduler import schedule_silence_check
 
 router = Router(name="chats")
 
-
 class ChatSG(StatesGroup):
     chatting = State()
     importing = State()
-
-
-_SENT_SPLIT_RE = re.compile(r"(?<=[\.\!\?…])\s+")
-
 
 def _limits_for(user_id: int):
     u = storage.get_user(user_id) or {}
@@ -248,20 +242,20 @@ async def _typing_loop(msg: Message, stop_evt: asyncio.Event):
         pass
 
 
-def _try_slice(buf: str, *, min_first: int, max_chars: int) -> tuple[str | None, str]:
-    # 1) абзац
-    if "\n\n" in buf:
-        head, tail = buf.split("\n\n", 1)
-        return head.strip(), tail.lstrip()
-    # 2) конец предложения
-    m = list(_SENT_SPLIT_RE.finditer(buf))
-    if m and (len(buf) >= min_first):
-        pos = m[-1].end()
-        return buf[:pos].strip(), buf[pos:].lstrip()
-    # 3) защита от слишком длинного
-    if len(buf) >= max_chars:
-        return buf[:max_chars].rstrip(), buf[max_chars:].lstrip()
-    return None, buf
+def _extract_sections(buf: str) -> tuple[list[str], str]:
+    parts: list[str] = []
+    while True:
+        start = buf.find("/s/")
+        if start == -1:
+            return parts, buf
+        if start > 0:
+            buf = buf[start:]
+            start = 0
+        end = buf.find("/n/", start + 3)
+        if end == -1:
+            return parts, buf
+        parts.append(buf[start + 3 : end].strip())
+        buf = buf[end + 3 :]
 
 
 @router.message(F.text & ~F.text.startswith("/"))
@@ -273,7 +267,8 @@ async def chatting_text(msg: Message):
         return
     chat_id = int(last["id"])
     storage.touch_activity(msg.from_user.id)
-    storage.add_message(chat_id, is_user=True, content=msg.text)
+    user_text = msg.text.replace("/s/", "").replace("/n/", "")
+    storage.add_message(chat_id, is_user=True, content=user_text)
     storage.set_user_chatting(msg.from_user.id, True)  # <-- флаг «диалог начался»
     # Индикатор «печатает…»
     stop = asyncio.Event()
@@ -285,32 +280,35 @@ async def chatting_text(msg: Message):
         if mode == "live":
             full = ""
             buf = ""
-            min_first = 120
-            max_chars = 800
 
             async for ev in live_stream(msg.from_user.id, chat_id, msg.text):
                 if ev["kind"] == "chunk":
                     buf += ev["text"]
-                    piece, buf = _try_slice(buf, min_first=min_first, max_chars=max_chars)
-                    if piece and piece.strip():
-                        await msg.answer(piece)
-                        full += (("\n" if full else "") + piece)
+                    pieces, buf = _extract_sections(buf)
+                    for piece in pieces:
+                        if piece:
+                            await msg.answer(piece)
+                            full += (("\n" if full else "") + piece)
                 elif ev["kind"] == "final":
-                    if buf.strip():
-                        await msg.answer(buf.strip())
-                        full += (("\n" if full else "") + buf.strip())
+                    buf += ev.get("text", "")
+                    pieces, _ = _extract_sections(buf)
+                    for piece in pieces:
+                        if piece:
+                            await msg.answer(piece)
+                            full += (("\n" if full else "") + piece)
                     usage_in = int(ev.get("usage_in") or 0)
                     usage_out = int(ev.get("usage_out") or 0)
-                    storage.add_message(chat_id, is_user=False, content=full, usage_in=usage_in, usage_out=usage_out)
+                    clean_full = full.replace("/s/", "").replace("/n/", "")
+                    storage.add_message(chat_id, is_user=False, content=clean_full, usage_in=usage_in, usage_out=usage_out)
                     if int(ev.get("deficit") or 0) > 0:
                         await msg.answer("⚠ Баланс токенов на нуле. Пополните баланс, чтобы продолжить комфортно.")
-                                # ответ в live завершён — теперь стартуем таймер «10 минут тишины»
-                    schedule_silence_check(msg.from_user.id, chat_id, delay_sec=600)    
+                    schedule_silence_check(msg.from_user.id, chat_id, delay_sec=600)
         else:
             # RP: один ответ
             r = await chat_turn(msg.from_user.id, chat_id, msg.text)
-            storage.add_message(chat_id, is_user=False, content=r.text, usage_in=r.usage_in, usage_out=r.usage_out)
-            await msg.answer(r.text)
+            clean_resp = r.text.replace("/s/", "").replace("/n/", "")
+            storage.add_message(chat_id, is_user=False, content=clean_resp, usage_in=r.usage_in, usage_out=r.usage_out)
+            await msg.answer(clean_resp)
             if r.deficit > 0:
                 await msg.answer("⚠ Баланс токенов на нуле. Пополните баланс, чтобы продолжить комфортно.")
             schedule_silence_check(msg.from_user.id, chat_id, delay_sec=600)
