@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 from aiogram import Router, F
+
 from aiogram.filters import CommandStart, CommandObject
-from aiogram.types import Message, ReplyKeyboardMarkup
+from aiogram.types import Message, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
+
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
 
 from app import storage
+from app.config import settings
+
 
 router = Router(name="user")
 
@@ -23,9 +27,37 @@ def main_menu_kb(user_id: int) -> ReplyKeyboardMarkup:
     return kb.as_markup(resize_keyboard=True)
 
 
+
+def _gate_kb() -> InlineKeyboardMarkup:
+    url = None
+    if settings.sub_channel_username:
+        url = f"https://t.me/{settings.sub_channel_username.lstrip('@')}"
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📣 Открыть канал", url=url or "https://t.me")],
+        [InlineKeyboardButton(text="✅ Проверить подписку", callback_data="gate:check")],
+    ])
+
+
+async def _check_subscription(msg: Message) -> bool:
+    if not settings.sub_channel_id:
+        return True
+    try:
+        member = await msg.bot.get_chat_member(chat_id=settings.sub_channel_id, user_id=msg.from_user.id)
+        status = getattr(member, "status", "left")
+        return status in ("member", "administrator", "creator")
+    except Exception:
+        return True
+
+
+
 @router.message(CommandStart(deep_link=True))
 async def start_deeplink(msg: Message, command: CommandObject | None = None):
+
     storage.ensure_user(msg.from_user.id, msg.from_user.username or None, default_tz_min=180)
+    if not await _check_subscription(msg):
+        await msg.answer("Подпишитесь на канал, чтобы продолжить.", reply_markup=_gate_kb())
+
+        return
     payload = (command.args or "").strip() if command else ""
     if payload.startswith("char_"):
         try:
@@ -41,8 +73,13 @@ async def start_deeplink(msg: Message, command: CommandObject | None = None):
 
 @router.message(CommandStart())
 async def start_plain(msg: Message):
+
     storage.ensure_user(msg.from_user.id, msg.from_user.username or None, default_tz_min=180)
+    if not await _check_subscription(msg):
+        await msg.answer("Подпишитесь на канал, чтобы продолжить.", reply_markup=_gate_kb())
+        return
     await msg.answer("Здравствуйте!", reply_markup=main_menu_kb(msg.from_user.id))
+
 
 
 @router.message(F.text == "▶ Продолжить")
