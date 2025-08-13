@@ -310,6 +310,11 @@ def set_character_photo_path(char_id: int, file_path: str) -> None:
     _exec("UPDATE characters SET photo_path=? WHERE id=?", (file_path, char_id))
 
 
+def set_character_photo(char_id: int, file_id: str | None) -> None:
+    """Store Telegram file ID for a character photo."""
+    _exec("UPDATE characters SET photo_id=? WHERE id=?", (file_id, char_id))
+
+
 def toggle_fav_char(
     user_id: int, char_id: int, *, allow_max: int | None = None
 ) -> bool:
