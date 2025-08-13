@@ -220,7 +220,6 @@ def _migrate() -> None:
     )
 
     # payments (каркас)
-
     _exec(
         """
     CREATE TABLE IF NOT EXISTS topups (
@@ -234,6 +233,19 @@ def _migrate() -> None:
         approved_at DATETIME
     )"""
     )
+
+    # broadcast log
+    _exec(
+        """
+    CREATE TABLE IF NOT EXISTS broadcast_log (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id     INTEGER NOT NULL,
+        status      TEXT NOT NULL,
+        note        TEXT,
+        created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+    )"""
+    )
+
 
     _exec(
         """
@@ -906,8 +918,24 @@ def mark_plan_sent(plan_id: int, ts: int) -> None:
 
 def skip_and_reschedule(plan_id: int, new_fire_at: int) -> None:
     _exec("UPDATE proactive_plan SET status='SKIPPED' WHERE id=?", (int(plan_id),))
-    row = _q(
-        "SELECT user_id, chat_id FROM proactive_plan WHERE id=?", (int(plan_id),)
-    ).fetchone()
+    row = _q("SELECT user_id, chat_id FROM proactive_plan WHERE id=?", (int(plan_id),)).fetchone()
     if row:
         insert_plan(int(row["user_id"]), int(row["chat_id"]), int(new_fire_at))
+
+
+# ------------- Broadcast log -------------
+
+def log_broadcast_status(user_id: int, status: str, note: str | None = None) -> None:
+    _exec(
+        "INSERT INTO broadcast_log(user_id, status, note) VALUES (?,?,?)",
+        (user_id, status, note),
+    )
+
+
+def log_broadcast_sent(user_id: int) -> None:
+    log_broadcast_status(user_id, "sent")
+
+
+def log_broadcast_error(user_id: int, note: str) -> None:
+    log_broadcast_status(user_id, "error", note)
+

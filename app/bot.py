@@ -24,7 +24,6 @@ from app import scheduler
 
 # Routers (подключаем команды и меню раньше, чат — последним)
 
-
 from app.handlers import admin as admin_handlers
 from app.handlers import broadcast as broadcast_handlers
 from app.handlers import user as user_handlers
@@ -32,6 +31,7 @@ from app.handlers import characters as characters_handlers
 from app.handlers import profile as profile_handlers
 from app.handlers import balance as balance_handlers
 from app.handlers import chats as chats_handlers  # <- чат-обработчики ДОЛЖНЫ идти последними
+
 
 
 # Если используете подписочный гейт, импортируйте из вашего модуля:
@@ -85,7 +85,8 @@ async def main():
     dp.update.outer_middleware(MaintenanceMiddleware())
 
     # Подключаем роутеры. ВАЖНО: «chats» — ПОСЛЕДНИЙ, чтобы не перехватывать slash-команды.
-    dp.include_router(admin_handlers.router) 
+    dp.include_router(admin_handlers.router)
+    dp.include_router(broadcast_handlers.router)
     dp.include_router(user_handlers.router)        # /start, главное меню
     dp.include_router(characters_handlers.router)  # карточки персонажей
 
