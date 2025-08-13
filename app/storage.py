@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from app.config import settings
+
 sqlite3.register_adapter(bool, int)
 sqlite3.register_converter("BOOLEAN", lambda v: bool(int(v)))
 
@@ -81,6 +83,8 @@ def _migrate() -> None:
     )
     if not _has_col("users", "pro_free_used"):
         _exec("ALTER TABLE users ADD COLUMN pro_free_used INTEGER DEFAULT 0")
+    if not _has_col("users", "last_daily_bonus_at"):
+        _exec("ALTER TABLE users ADD COLUMN last_daily_bonus_at DATETIME")
 
     # characters
 # >>> storage.py — в _migrate(), блок characters:
@@ -178,7 +182,7 @@ def _migrate() -> None:
 
     # payments (каркас)
     _exec(
-        """
+        """ 
     CREATE TABLE IF NOT EXISTS topups (
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id     INTEGER NOT NULL,
@@ -188,6 +192,17 @@ def _migrate() -> None:
         created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
         approved_by INTEGER,
         approved_at DATETIME
+    )"""
+    )
+
+    _exec(
+        """
+    CREATE TABLE IF NOT EXISTS toki_log (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id     INTEGER NOT NULL,
+        amount      INTEGER NOT NULL,
+        meta        TEXT,
+        created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
     )"""
     )
 
@@ -523,12 +538,20 @@ def add_toki(user_id: int, amount: int, meta: str = "bonus") -> None:
         "UPDATE users SET free_toki = free_toki + ? WHERE tg_id=?",
         (int(amount), user_id),
     )
+    _exec(
+        "INSERT INTO toki_log(user_id, amount, meta) VALUES (?,?,?)",
+        (user_id, int(amount), meta),
+    )
 
 
 def add_paid_tokens(user_id: int, amount: int, meta: str = "topup") -> None:
     _exec(
         "UPDATE users SET paid_tokens = paid_tokens + ? WHERE tg_id=?",
         (int(amount), user_id),
+    )
+    _exec(
+        "INSERT INTO toki_log(user_id, amount, meta) VALUES (?,?,?)",
+        (user_id, int(amount), meta),
     )
 
 
@@ -569,6 +592,38 @@ def spend_tokens(user_id: int, amount: int) -> Tuple[int, int, int]:
 def nightly_bonus_toki(user_id: int, amount: int) -> None:
     today = datetime.utcnow().strftime("%Y-%m-%d")
     add_toki(user_id, amount, meta=f"nightly:{today}")
+
+
+def get_toki_log(user_id: int, limit: int = 10) -> List[Dict[str, Any]]:
+    rows = _q(
+        "SELECT amount, meta, created_at FROM toki_log WHERE user_id=? ORDER BY id DESC LIMIT ?",
+        (user_id, int(limit)),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def daily_bonus_free_users() -> int:
+    amount = int(settings.subs.nightly_toki_bonus.get("free", 0))
+    if amount <= 0:
+        return 0
+    rows = _q(
+        """
+        SELECT tg_id FROM users
+         WHERE subscription='free'
+           AND (last_daily_bonus_at IS NULL OR date(last_daily_bonus_at) < date('now','utc'))
+        """
+    ).fetchall()
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    count = 0
+    for r in rows:
+        uid = int(r["tg_id"])
+        add_toki(uid, amount, meta=f"daily:{today}")
+        _exec(
+            "UPDATE users SET last_daily_bonus_at=CURRENT_TIMESTAMP WHERE tg_id=?",
+            (uid,),
+        )
+        count += 1
+    return count
 
 
 # ------------- Proactive helpers -------------

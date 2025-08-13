@@ -32,12 +32,21 @@ from app import storage
 
 router = Router(name="balance")
 
+
 def _balance_text(u: dict) -> str:
+    ops = storage.get_toki_log(int(u.get("tg_id")), limit=5)
+    journal = ""
+    if ops:
+        journal_lines = [
+            f"{r['created_at'][:16]} {r['meta'] or ''}: {int(r['amount'])}" for r in ops
+        ]
+        journal = "\n\nПоследние операции:\n" + "\n".join(journal_lines)
     return (
         "Баланс:\n"
         f"Токи (free): <b>{u.get('free_toki') or 0}</b>\n"
         f"Токены (paid): <b>{u.get('paid_tokens') or 0}</b>\n\n"
         "Пополнение — через /pay (после подтверждения токены будут зачислены)."
+        + journal
     )
 
 @router.message(Command("balance"))
