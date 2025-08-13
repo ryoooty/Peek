@@ -6,6 +6,8 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from app.config import settings
+
 
 sqlite3.register_adapter(bool, int)
 sqlite3.register_converter("BOOLEAN", lambda v: bool(int(v)))
@@ -391,10 +393,6 @@ def set_character_prompts(
 
 def set_character_photo_path(char_id: int, file_path: str) -> None:
     _exec("UPDATE characters SET photo_path=? WHERE id=?", (file_path, char_id))
-
-
-def set_character_photo(char_id: int, file_id: str | None) -> None:
-    _exec("UPDATE characters SET photo_id=? WHERE id=?", (file_id, char_id))
 
 
 def set_character_photo(char_id: int, file_id: str | None) -> None:
