@@ -1,20 +1,19 @@
 from __future__ import annotations
 
-
 import sqlite3
-from datetime import datetime, timezone
+import time
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
+
 
 sqlite3.register_adapter(bool, int)
 sqlite3.register_converter("BOOLEAN", lambda v: bool(int(v)))
 
-from app.config import settings
-
-
 _conn: sqlite3.Connection | None = None
 _conn_path: Path | None = None
 _stats_cache: Dict[str, Tuple[float, Any]] = {}
+
 
 
 # ------------- Core -------------
@@ -622,6 +621,97 @@ def delete_chat(chat_id: int, user_id: int) -> bool:
 
 
 # ------------- Stats -------------
+def _cached_stat(key: str, ttl: int, fn: Callable[[], Any]) -> Any:
+    now = time.time()
+    cached = _stats_cache.get(key)
+    if cached and now - cached[0] < ttl:
+        return cached[1]
+    val = fn()
+    _stats_cache[key] = (now, val)
+    return val
+
+
+def usage_by_day(days: int = 7, ttl: int = 60) -> List[Dict[str, Any]]:
+    def _calc():
+        start = (datetime.utcnow() - timedelta(days=days - 1)).strftime("%Y-%m-%d")
+        rows = _q(
+            """
+            SELECT date(created_at) AS day,
+                   SUM(COALESCE(usage_in,0)) AS in_tokens,
+                   SUM(COALESCE(usage_out,0)) AS out_tokens
+              FROM messages
+             WHERE created_at >= ?
+             GROUP BY day
+             ORDER BY day
+            """,
+            (start,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    return _cached_stat(f"usage_day:{days}", ttl, _calc)
+
+
+def usage_by_week(weeks: int = 4, ttl: int = 60) -> List[Dict[str, Any]]:
+    def _calc():
+        start = (datetime.utcnow() - timedelta(weeks=weeks - 1)).strftime("%Y-%m-%d")
+        rows = _q(
+            """
+            SELECT strftime('%Y-%W', created_at) AS week,
+                   SUM(COALESCE(usage_in,0)) AS in_tokens,
+                   SUM(COALESCE(usage_out,0)) AS out_tokens
+              FROM messages
+             WHERE created_at >= ?
+             GROUP BY week
+             ORDER BY week
+            """,
+            (start,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    return _cached_stat(f"usage_week:{weeks}", ttl, _calc)
+
+
+def top_characters(limit: int = 5, ttl: int = 60) -> List[Dict[str, Any]]:
+    def _calc():
+        rows = _q(
+            """
+            SELECT ch.name AS name, COUNT(*) AS cnt
+              FROM messages m
+              JOIN chats c ON c.id=m.chat_id
+              JOIN characters ch ON ch.id=c.char_id
+             WHERE m.is_user=0
+             GROUP BY ch.id
+             ORDER BY cnt DESC
+             LIMIT ?
+            """,
+            (int(limit),),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    return _cached_stat(f"top_chars:{limit}", ttl, _calc)
+
+
+def active_users(limit: int = 5, ttl: int = 60) -> List[Dict[str, Any]]:
+    def _calc():
+        rows = _q(
+            """
+            SELECT u.tg_id AS user_id,
+                   u.username AS username,
+                   COUNT(*) AS cnt
+              FROM messages m
+              JOIN chats c ON c.id=m.chat_id
+              JOIN users u ON u.tg_id=c.user_id
+             GROUP BY u.tg_id, u.username
+             ORDER BY cnt DESC
+             LIMIT ?
+            """,
+            (int(limit),),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    return _cached_stat(f"active_users:{limit}", ttl, _calc)
+
+
 def user_totals(user_id: int) -> Dict[str, Any]:
     msgs = _q(
         """

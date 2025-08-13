@@ -1,51 +1,32 @@
 
-
 from __future__ import annotations
 
-import time
 from pathlib import Path
+import time
 
 from aiogram import Router
-from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.types import Message
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.types.input_file import FSInputFile  # если будете где-то отправлять локальные файлы
 
-from app import storage
 from app.config import BASE_DIR, settings
-
+from app import storage
 
 router = Router(name="admin")
 
 
 async def _require_admin(msg: Message) -> bool:
-    if msg.from_user.id not in settings.admin_ids:
-        await msg.answer("Нет доступа")
-        return False
-    return True
+    uid = msg.from_user.id if msg.from_user else None
+    if uid in settings.admin_ids:
+        return True
+    await msg.answer("Доступ запрещён")
+    return False
 
-  
-
-
-from app import storage
-from app.config import BASE_DIR, settings
-
-
-router = Router(name="admin")
-
-
-async def _require_admin(msg: Message) -> bool:
-    if msg.from_user.id not in settings.admin_ids:
-
-        try:
-            await msg.answer("Доступ запрещён")
-        except Exception:
-            pass
-        return False
-    return True
 
 MEDIA_DIR = Path(BASE_DIR) / "media" / "characters"
 MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+
 
 @router.message(Command("char_photo"))
 async def cmd_char_photo(msg: Message):
@@ -110,4 +91,39 @@ async def cmd_char_photo(msg: Message):
         "Фото сохранено ✅\nПуть: <code>{}</code>".format(save_path.as_posix())
     )
 
-    
+    await msg.answer("Фото сохранено ✅\nПуть: <code>{}</code>".format(save_path.as_posix()))
+
+
+@router.message(Command("stats"))
+async def cmd_stats(msg: Message):
+    if not await _require_admin(msg):
+        return
+    days = storage.usage_by_day()
+    weeks = storage.usage_by_week()
+    top_chars = storage.top_characters()
+    act_users = storage.active_users()
+    lines = ["<b>Статистика</b>"]
+
+    if days:
+        lines.append("\n<b>Usage по дням</b>")
+        for r in days:
+            lines.append(f"{r['day']}: {r['in_tokens']}/{r['out_tokens']}")
+
+    if weeks:
+        lines.append("\n<b>Usage по неделям</b>")
+        for r in weeks:
+            lines.append(f"{r['week']}: {r['in_tokens']}/{r['out_tokens']}")
+
+    if top_chars:
+        lines.append("\n<b>Топ персонажей</b>")
+        for r in top_chars:
+            lines.append(f"{r['name']}: {r['cnt']}")
+
+    if act_users:
+        lines.append("\n<b>Активные пользователи</b>")
+        for r in act_users:
+            uname = r.get('username') or str(r['user_id'])
+            lines.append(f"{uname}: {r['cnt']}")
+
+    await msg.answer("\n".join(lines))
+
