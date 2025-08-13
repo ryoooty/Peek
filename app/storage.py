@@ -432,6 +432,24 @@ def add_message(
     return int(cur.lastrowid)
 
 
+def compress_history(
+    chat_id: int,
+    summary: str,
+    *,
+    usage_in: int | None = None,
+    usage_out: int | None = None,
+) -> None:
+    """Удаляет сообщения чата и сохраняет краткое содержание."""
+    _exec("DELETE FROM messages WHERE chat_id=?", (chat_id,))
+    add_message(
+        chat_id,
+        is_user=False,
+        content=summary,
+        usage_in=usage_in,
+        usage_out=usage_out,
+    )
+
+
 def list_messages(chat_id: int, *, limit: int | None = None) -> List[Dict[str, Any]]:
     if limit:
         rows = _q(

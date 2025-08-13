@@ -64,7 +64,7 @@ def _apply_billing(user_id: int, model: str, usage_in: int, usage_out: int) -> T
     return billed, deficit
 
 
-async def summarize_chat(chat_id: int, *, model: str, sentences: int = 4) -> str:
+async def summarize_chat(chat_id: int, *, model: str, sentences: int = 4) -> ChatReply:
     msgs = storage.list_messages(chat_id, limit=40)
     parts: List[str] = []
     for m in msgs[-20:]:
@@ -82,7 +82,28 @@ async def summarize_chat(chat_id: int, *, model: str, sentences: int = 4) -> str
         max_tokens=220,
         timeout_s=settings.limits.request_timeout_seconds,
     )
-    return _safe_trim(r.text, 700)
+    return ChatReply(
+        text=_safe_trim(r.text, 700),
+        usage_in=int(r.usage_in or 0),
+        usage_out=int(r.usage_out or 0),
+    )
+
+
+async def _maybe_compress_history(user_id: int, chat_id: int, model: str) -> None:
+    if not settings.limits.auto_compress_default:
+        return
+    msgs = storage.list_messages(chat_id)
+    approx_tokens = sum(len(m["content"]) for m in msgs) // 4
+    if approx_tokens <= int(settings.limits.context_threshold_tokens or 0):
+        return
+    summary = await summarize_chat(chat_id, model=model)
+    storage.compress_history(
+        chat_id,
+        summary.text,
+        usage_in=summary.usage_in,
+        usage_out=summary.usage_out,
+    )
+    _apply_billing(user_id, model, summary.usage_in, summary.usage_out)
 
 
 async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
@@ -90,9 +111,11 @@ async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
     ch = storage.get_chat(chat_id) or {}
     resp_size = (ch.get("resp_size") or user.get("default_resp_size") or "auto")
     toks_limit, char_limit = _size_caps(str(resp_size))
+    model = (user.get("default_model") or settings.default_model)
+
+    await _maybe_compress_history(user_id, chat_id, model)
 
     messages = _collect_context(chat_id) + [dict(role="user", content=text)]
-    model = (user.get("default_model") or settings.default_model)
 
     r = await provider_chat(
         model=model,
@@ -124,6 +147,9 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[D
     toks_limit, _ = _size_caps(str(resp_size))
 
     model = (user.get("default_model") or settings.default_model)
+
+    await _maybe_compress_history(user_id, chat_id, model)
+
     messages = _collect_context(chat_id) + [dict(role="user", content=text)]
 
     async for ev in provider_stream(

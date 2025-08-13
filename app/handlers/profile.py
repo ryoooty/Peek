@@ -23,11 +23,13 @@ def _profile_text(u: dict) -> str:
     live_on = bool(u.get("proactive_enabled") or 0)
     per_day = int(u.get("pro_per_day") or 2)
     gap_min = int(u.get("pro_min_gap_min") or 10)
+    auto_cmp = settings.limits.auto_compress_default
     return (
         "<b>Профиль</b>\n"
         f"Подписка: <b>{sub}</b>\n"
         f"Модель: <b>{model}</b>\n"
         f"Режим Live: {'🟢 Вкл' if live_on else '⚪ Выкл'}\n"
+        f"Автосжатие: {'🗜 Вкл' if auto_cmp else '⚪ Выкл'}\n"
         f"Нуджей в сутки: <b>{per_day}</b>\n"
         f"Мин. интервал: <b>{gap_min} мин</b>\n\n"
         f"Всего сообщений: <b>{totals['user_msgs'] + totals['ai_msgs']}</b>\n"
