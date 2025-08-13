@@ -56,7 +56,9 @@ def test_chat_turn_accumulates_cache_tokens(tmp_path, monkeypatch):
     storage.init(tmp_path / "chat.db")
     storage.ensure_user(1, "u")
 
-    monkeypatch.setattr(chats, "_collect_context", lambda chat_id: [])
+    async def _collect_ctx(chat_id, **kwargs):
+        return []
+    monkeypatch.setattr(chats, "_collect_context", _collect_ctx)
 
     async def noop(*args, **kwargs):
         return None
@@ -82,7 +84,9 @@ def test_live_stream_accumulates_cache_tokens(tmp_path, monkeypatch):
     storage.init(tmp_path / "stream.db")
     storage.ensure_user(2, "u")
 
-    monkeypatch.setattr(chats, "_collect_context", lambda chat_id: [])
+    async def _collect_ctx(chat_id, **kwargs):
+        return []
+    monkeypatch.setattr(chats, "_collect_context", _collect_ctx)
 
     async def noop(*args, **kwargs):
         return None
