@@ -24,6 +24,7 @@ from app import scheduler
 
 
 from app.handlers import admin as admin_handlers
+from app.handlers import broadcast as broadcast_handlers
 from app.handlers import user as user_handlers
 from app.handlers import characters as characters_handlers
 from app.handlers import profile as profile_handlers
@@ -68,6 +69,7 @@ async def main():
     dp = Dispatcher()
 
     # Middlewares (внешние)
+
     dp.update.outer_middleware(MaintenanceMiddleware())
     if SubscriptionGateMiddleware:
         dp.update.outer_middleware(SubscriptionGateMiddleware())
@@ -77,6 +79,7 @@ async def main():
     dp.include_router(admin_handlers.router) 
     dp.include_router(user_handlers.router)        # /start, главное меню
     dp.include_router(characters_handlers.router)  # карточки персонажей
+
     dp.include_router(profile_handlers.router)     # профиль/настройки
     dp.include_router(balance_handlers.router)     # баланс, промо, (оплата при необходимости)
       # админ-команды
