@@ -4,12 +4,14 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+import time
 
 sqlite3.register_adapter(bool, int)
 sqlite3.register_converter("BOOLEAN", lambda v: bool(int(v)))
 
 _conn: sqlite3.Connection | None = None
 _conn_path: Path | None = None
+_stats_cache: Dict[str, Tuple[float, Any]] = {}
 
 
 # ------------- Core -------------
@@ -36,6 +38,21 @@ def _exec(sql: str, params: Tuple | Dict | None = None) -> sqlite3.Cursor:
 def _q(sql: str, params: Tuple | Dict | None = None) -> sqlite3.Cursor:
     assert _conn is not None
     return _conn.execute(sql, params or ())
+
+
+# --- Simple cache for heavy stat queries ---
+def _cache_get(key: str, ttl: int) -> Any | None:
+    data = _stats_cache.get(key)
+    if not data:
+        return None
+    ts, value = data
+    if time.time() - ts > ttl:
+        return None
+    return value
+
+
+def _cache_set(key: str, value: Any) -> None:
+    _stats_cache[key] = (time.time(), value)
 
 
 # ------------- Schema -------------
@@ -515,6 +532,124 @@ def user_totals(user_id: int) -> Dict[str, Any]:
         top_character=(top["name"] if top else None),
         top_count=int(top["cnt"] or 0) if top else 0,
     )
+
+
+def usage_by_day(days: int = 7, *, use_cache: bool = True) -> List[Dict[str, Any]]:
+    key = f"usage_day:{days}"
+    if use_cache:
+        cached = _cache_get(key, 60)
+        if cached is not None:
+            return cached
+    rows = _q(
+        """
+        SELECT
+          date(created_at) AS day,
+          COUNT(*) AS messages,
+          SUM(CASE WHEN is_user=1 THEN 1 ELSE 0 END) AS user_msgs,
+          SUM(CASE WHEN is_user=0 THEN 1 ELSE 0 END) AS ai_msgs,
+          SUM(COALESCE(usage_in,0)) AS in_tokens,
+          SUM(COALESCE(usage_out,0)) AS out_tokens
+        FROM messages
+        WHERE created_at >= date('now', ?)
+        GROUP BY day
+        ORDER BY day DESC
+        """,
+        (f"-{days - 1} day",),
+    ).fetchall()
+    result = [dict(r) for r in rows]
+    if use_cache:
+        _cache_set(key, result)
+    return result
+
+
+def usage_by_week(weeks: int = 4, *, use_cache: bool = True) -> List[Dict[str, Any]]:
+    key = f"usage_week:{weeks}"
+    if use_cache:
+        cached = _cache_get(key, 60)
+        if cached is not None:
+            return cached
+    rows = _q(
+        """
+        SELECT
+          strftime('%Y-%W', created_at) AS week,
+          COUNT(*) AS messages,
+          SUM(CASE WHEN is_user=1 THEN 1 ELSE 0 END) AS user_msgs,
+          SUM(CASE WHEN is_user=0 THEN 1 ELSE 0 END) AS ai_msgs,
+          SUM(COALESCE(usage_in,0)) AS in_tokens,
+          SUM(COALESCE(usage_out,0)) AS out_tokens
+        FROM messages
+        WHERE created_at >= date('now', ?)
+        GROUP BY week
+        ORDER BY week DESC
+        """,
+        (f"-{weeks * 7 - 1} day",),
+    ).fetchall()
+    result = [dict(r) for r in rows]
+    if use_cache:
+        _cache_set(key, result)
+    return result
+
+
+def top_characters(limit: int = 5, days: int | None = None, *, use_cache: bool = True) -> List[Dict[str, Any]]:
+    key = f"top_chars:{limit}:{days}"
+    if use_cache:
+        cached = _cache_get(key, 60)
+        if cached is not None:
+            return cached
+    where = "WHERE m.is_user=0"
+    params: List[Any] = []
+    if days:
+        where += " AND m.created_at >= date('now', ?)"
+        params.append(f"-{days - 1} day")
+    params.append(limit)
+    rows = _q(
+        f"""
+        SELECT ch.id AS id, ch.name AS name, COUNT(*) AS cnt
+          FROM messages m
+          JOIN chats c ON c.id=m.chat_id
+          JOIN characters ch ON ch.id=c.char_id
+          {where}
+         GROUP BY ch.id
+         ORDER BY cnt DESC
+         LIMIT ?
+        """,
+        tuple(params),
+    ).fetchall()
+    result = [dict(r) for r in rows]
+    if use_cache:
+        _cache_set(key, result)
+    return result
+
+
+def active_users(limit: int = 5, days: int | None = None, *, use_cache: bool = True) -> List[Dict[str, Any]]:
+    key = f"active_users:{limit}:{days}"
+    if use_cache:
+        cached = _cache_get(key, 60)
+        if cached is not None:
+            return cached
+    where = ""
+    params: List[Any] = []
+    if days:
+        where = "WHERE m.created_at >= date('now', ?)"
+        params.append(f"-{days - 1} day")
+    params.append(limit)
+    rows = _q(
+        f"""
+        SELECT u.tg_id AS user_id, u.username AS username, COUNT(*) AS cnt
+          FROM messages m
+          JOIN chats c ON c.id=m.chat_id
+          JOIN users u ON u.tg_id=c.user_id
+          {where}
+         GROUP BY u.tg_id
+         ORDER BY cnt DESC
+         LIMIT ?
+        """,
+        tuple(params),
+    ).fetchall()
+    result = [dict(r) for r in rows]
+    if use_cache:
+        _cache_set(key, result)
+    return result
 
 
 # ------------- Billing (toki/tokens) -------------
