@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
+
 from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
@@ -45,6 +46,7 @@ async def _do_broadcast(msg: Message, *, text: str, photo: str | None, audience:
     await msg.answer(f"Рассылка завершена. Успешно: {sent}, ошибок: {failed}")
 
 
+
 @router.message(Command("broadcast"))
 async def cmd_broadcast(msg: Message) -> None:
     if msg.from_user.id not in settings.admin_ids:
@@ -72,3 +74,4 @@ async def cmd_broadcast_photo(msg: Message) -> None:
     text = parts[2]
     file_id = msg.photo[-1].file_id
     await _do_broadcast(msg, text=text, photo=file_id, audience=audience)
+

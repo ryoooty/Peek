@@ -6,18 +6,23 @@ import logging
 from pathlib import Path
 
 from aiogram import Bot, Dispatcher
+
 from aiogram.client.default import DefaultBotProperties
+
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand
+from app.mw.ban import BanMiddleware
 from app.mw.maintenance import MaintenanceMiddleware
+
+from app.mw.rate_limit import RateLimitLLM
 from app.config import settings, register_reload_hook
 from app import storage
 # bot.py, в main() после создания bot и dp
 from app import scheduler
 
 
-# Routers (подключаем команды и меню раньше, чат — последним)
 
+# Routers (подключаем команды и меню раньше, чат — последним)
 
 from app.handlers import admin as admin_handlers
 from app.handlers import broadcast as broadcast_handlers
@@ -28,11 +33,17 @@ from app.handlers import balance as balance_handlers
 from app.handlers import chats as chats_handlers  # <- чат-обработчики ДОЛЖНЫ идти последними
 
 
+
 # Если используете подписочный гейт, импортируйте из вашего модуля:
 try:
     from app.middlewares.subscription import SubscriptionGateMiddleware
 except Exception:
     SubscriptionGateMiddleware = None  # опционально
+
+try:
+    from app.middlewares.timezone import TimezoneMiddleware
+except Exception:
+    TimezoneMiddleware = None
 
 logging.basicConfig(
     level=logging.INFO,
@@ -65,15 +76,20 @@ async def main():
     dp = Dispatcher()
 
     # Middlewares (внешние)
+
     dp.update.outer_middleware(MaintenanceMiddleware())
     if SubscriptionGateMiddleware:
         dp.update.outer_middleware(SubscriptionGateMiddleware())
+    if TimezoneMiddleware:
+        dp.update.outer_middleware(TimezoneMiddleware())
     dp.update.outer_middleware(MaintenanceMiddleware())
+
     # Подключаем роутеры. ВАЖНО: «chats» — ПОСЛЕДНИЙ, чтобы не перехватывать slash-команды.
     dp.include_router(admin_handlers.router)
     dp.include_router(broadcast_handlers.router)
     dp.include_router(user_handlers.router)        # /start, главное меню
     dp.include_router(characters_handlers.router)  # карточки персонажей
+
     dp.include_router(profile_handlers.router)     # профиль/настройки
     dp.include_router(balance_handlers.router)     # баланс, промо, (оплата при необходимости)
       # админ-команды
