@@ -77,7 +77,8 @@ async def cb_balance(call: CallbackQuery):
     text = (
         "Баланс:\n"
         f"Токи (free): <b>{u.get('free_toki') or 0}</b>\n"
-        f"Токены (paid): <b>{u.get('paid_tokens') or 0}</b>\n\n"
+        f"Токены (paid): <b>{u.get('paid_tokens') or 0}</b>\n"
+        f"Кэш‑токены: <b>{u.get('cache_tokens') or 0}</b>\n\n"
         "Пополнение — через /pay (после подтверждения токены будут зачислены)."
     )
     kb = InlineKeyboardBuilder()

@@ -57,6 +57,14 @@ def _billable_tokens(model: str, usage_in: int, usage_out: int) -> int:
     return max(1, int(math.ceil(units)))
 
 
+def _cache_tokens(model: str, usage_in: int, usage_out: int) -> int:
+    t = settings.model_tariffs.get(model) or settings.model_tariffs.get(settings.default_model)
+    if not t:
+        return 0
+    units = (usage_in + usage_out) * t.cache_per_1k / 1000.0
+    return int(units)
+
+
 def _apply_billing(user_id: int, model: str, usage_in: int, usage_out: int) -> Tuple[int, int]:
     """Возвращает (billed, deficit)."""
     billed = _billable_tokens(model, usage_in, usage_out)
@@ -103,11 +111,16 @@ async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
     )
     out_text = _safe_trim(r.text, char_limit)
 
-    billed, deficit = _apply_billing(user_id, model, int(r.usage_in or 0), int(r.usage_out or 0))
+    usage_in = int(r.usage_in or 0)
+    usage_out = int(r.usage_out or 0)
+    cache_tokens = _cache_tokens(model, usage_in, usage_out)
+    if cache_tokens:
+        storage.add_cache_tokens(user_id, cache_tokens)
+    billed, deficit = _apply_billing(user_id, model, usage_in, usage_out)
     return ChatReply(
         text=out_text,
-        usage_in=int(r.usage_in or 0),
-        usage_out=int(r.usage_out or 0),
+        usage_in=usage_in,
+        usage_out=usage_out,
         billed=billed,
         deficit=deficit,
     )
@@ -138,6 +151,9 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[D
         elif ev.get("type") == "usage":
             usage_in = int(ev.get("in") or 0)
             usage_out = int(ev.get("out") or 0)
+            cache_tokens = _cache_tokens(model, usage_in, usage_out)
+            if cache_tokens:
+                storage.add_cache_tokens(user_id, cache_tokens)
             billed, deficit = _apply_billing(user_id, model, usage_in, usage_out)
             yield {
                 "kind": "final",
