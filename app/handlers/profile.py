@@ -1,293 +1,244 @@
-# app/handlers/admin.py
+# app/profile.py
 from __future__ import annotations
-
-import time
-import traceback
-from pathlib import Path
-from typing import Optional
 
 from aiogram import Router, F
 from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import CallbackQuery, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from aiogram.exceptions import TelegramBadRequest
 
 from app import storage
-from app.config import settings, reload_settings, BASE_DIR
+from app.config import settings
 
-router = Router(name="admin")
-
-# --------- Constants / Paths ---------
-MEDIA_DIR = Path(BASE_DIR) / "media" / "characters"
-MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+router = Router(name="profile")
 
 
-# --------- Helpers ---------
-def _is_admin(uid: int) -> bool:
-    try:
-        return int(uid) in {int(x) for x in (settings.admin_ids or [])}
-    except Exception:
-        return False
-
-
-async def _require_admin(msg_or_call) -> bool:
-    uid = msg_or_call.from_user.id
-    if not _is_admin(uid):
-        # Молча игнорируем, чтобы не палить список админов
-        return False
-    return True
-
-
-def _admin_kb() -> InlineKeyboardBuilder:
-    kb = InlineKeyboardBuilder()
-    kb.button(text="🛠 Техработы on/off", callback_data="admin:maintenance")
-    kb.button(text="🔄 Reload config", callback_data="admin:reload")
-    kb.button(text="📨 Nudge now (self)", callback_data="admin:nudge")
-    kb.button(text="📊 Диагностика", callback_data="admin:diag")
-    kb.button(text="📈 Статистика", callback_data="admin:stats")
-    kb.button(text="➕ Добавить персонажа", callback_data="admin:char_add_help")
-    kb.button(text="🖼 Фото персонажа", callback_data="admin:char_photo_help")
-    kb.adjust(2, 2, 2, 2)
-    return kb
-
-
-def _fmt_diag() -> str:
-    try:
-        u_cnt = storage._q("SELECT COUNT(*) c FROM users").fetchone()["c"]
-        c_cnt = storage._q("SELECT COUNT(*) c FROM chats").fetchone()["c"]
-        m_cnt = storage._q("SELECT COUNT(*) c FROM messages").fetchone()["c"]
-        p_cnt = storage._q("SELECT COUNT(*) c FROM proactive_log").fetchone()["c"]
-    except Exception:
-        u_cnt = c_cnt = m_cnt = p_cnt = "?"
-    mode = "ON" if settings.maintenance_mode else "OFF"
-    model = settings.default_model
+def _profile_text(u: dict) -> str:
+    totals = storage.user_totals(u["tg_id"])
+    top_line = "—"
+    if totals["top_character"]:
+        top_line = f"{totals['top_character']} ({totals['top_count']} сооб.)"
+    sub = (u.get("subscription") or "free").lower()
+    chats_total = len(storage.list_user_chats(u["tg_id"], page=1, page_size=9999))
+    model = (u.get("default_model") or settings.default_model)
+    live_on = bool(u.get("proactive_enabled") or 0)
+    per_day = int(u.get("pro_per_day") or 2)
+    gap_min = int(u.get("pro_min_gap_min") or 10)
     return (
-        "<b>Диагностика</b>\n"
-        f"• Users: <b>{u_cnt}</b>\n"
-        f"• Chats: <b>{c_cnt}</b>\n"
-        f"• Messages: <b>{m_cnt}</b>\n"
-        f"• Proactive log: <b>{p_cnt}</b>\n"
-        f"• Maintenance: <b>{mode}</b>\n"
-        f"• Default model: <code>{model}</code>\n"
+        "<b>Профиль</b>\n"
+        f"Подписка: <b>{sub}</b>\n"
+        f"Модель: <b>{model}</b>\n"
+        f"Режим Live: {'🟢 Вкл' if live_on else '⚪ Выкл'}\n"
+        f"Нуджей в сутки: <b>{per_day}</b>\n"
+        f"Мин. интервал: <b>{gap_min} мин</b>\n\n"
+        f"Всего сообщений: <b>{totals['user_msgs'] + totals['ai_msgs']}</b>\n"
+        f"Всего чатов: <b>{chats_total}</b>\n"
+        f"Топ персонаж: <b>{top_line}</b>\n"
     )
 
 
-async def _nudge_self(uid: int) -> str:
-    """
-    Принудительно отправить Live-нудж самому себе в актуальный last_chat.
-    """
-    last = storage.get_last_chat(uid)
-    if not last:
-        return "❌ Нет последнего чата для отправки."
-    chat_id = int(last["id"])
-
-    fn = None
-    # поддержим оба расположения доменной функции
-    try:
-        from app.domain.proactive import proactive_nudge as fn  # type: ignore
-    except Exception:
-        try:
-            from app.proactive import proactive_nudge as fn  # type: ignore
-        except Exception:
-            fn = None
-
-    if not fn:
-        return "❌ Нет реализации proactive_nudge (app.domain.proactive или app.proactive)."
-
-    try:
-        # пробуем сигнатуру без bot
-        txt = await fn(user_id=uid, chat_id=chat_id)  # type: ignore[misc]
-        return "✅ Отправлено." if txt else "⚠ Ничего не отправлено (пустой текст)."
-    except TypeError:
-        # если требуется bot — сообщим явно
-        return "⚠ Не удалось вызвать proactive_nudge: ожидается параметр bot."
-    except Exception:
-        return "❌ Ошибка при отправке:\n<pre>{}</pre>".format(
-            (traceback.format_exc()[:1500]).replace("<", "&lt;")
-        )
+def _profile_kb(u: dict):
+    kb = InlineKeyboardBuilder()
+    # 1 — модель
+    kb.button(text=f"🤖 Модель: {u.get('default_model') or settings.default_model}", callback_data="prof:model")
+    # 2 — баланс/подписка
+    kb.button(text="💰 Баланс", callback_data="prof:balance")
+    kb.button(text="🎫 Подписка", callback_data="prof:sub")
+    # 3 — режим общения
+    kb.button(text=f"💬 Режим: {u.get('default_chat_mode') or 'rp'}", callback_data="prof:mode")
+    # 4 — настройки/инфо
+    kb.button(text="⚙ Настройки", callback_data="prof:settings")
+    kb.button(text="ℹ Инфо", callback_data="prof:info")
+    kb.adjust(1, 2, 1, 2)
+    return kb.as_markup()
 
 
-def _escape(s: str) -> str:
-    return s.replace("<", "&lt;").replace(">", "&gt;")
+@router.message(Command("profile"))
+async def show_profile(msg: Message):
+    storage.ensure_user(msg.from_user.id, msg.from_user.username or None)
+    u = storage.get_user(msg.from_user.id) or {}
+    await msg.answer(_profile_text(u), reply_markup=_profile_kb(u))
 
 
-# --------- /admin: панель ---------
-@router.message(Command("admin"))
-async def cmd_admin(msg: Message):
-    if not await _require_admin(msg):
-        return
+@router.callback_query(F.data == "prof:model")
+async def cb_model(call: CallbackQuery):
+    u = storage.get_user(call.from_user.id) or {}
+    models = list(settings.model_tariffs.keys())
+    cur = (u.get("default_model") or settings.default_model)
+    nxt = models[(models.index(cur) + 1) % len(models)] if models else cur
+    storage.set_user_field(call.from_user.id, "default_model", nxt)
+    u = storage.get_user(call.from_user.id) or {}
+    await call.message.edit_text(_profile_text(u), reply_markup=_profile_kb(u))
+    await call.answer("Модель обновлена")
+
+
+@router.callback_query(F.data == "prof:balance")
+async def cb_balance(call: CallbackQuery):
+    u = storage.get_user(call.from_user.id) or {}
     text = (
-        "<b>Админ‑панель</b>\n"
-        "Быстрые действия ниже. Команды:\n"
-        "• /maintenance — переключить техработы\n"
-        "• /reload — перечитать конфиг\n"
-        "• /nudge_now — отправить Live себе\n"
-        "• /diag — диагностика\n"
-        "• /stats — статистика\n"
-        "• /char_add, /char_photo — управление персонажами"
+        "Баланс:\n"
+        f"Токи (free): <b>{u.get('free_toki') or 0}</b>\n"
+        f"Токены (paid): <b>{u.get('paid_tokens') or 0}</b>\n\n"
+        "Пополнение — через /pay (после подтверждения токены будут зачислены)."
     )
-    await msg.answer(text, reply_markup=_admin_kb().as_markup())
+    kb = InlineKeyboardBuilder()
+    kb.button(text="⬅ Назад", callback_data="prof:back")
+    kb.adjust(1)
+    await call.message.edit_text(text, reply_markup=kb.as_markup())
+    await call.answer()
 
 
-@router.callback_query(F.data.startswith("admin:"))
-async def cb_admin(call: CallbackQuery):
-    if not await _require_admin(call):
-        return
-    action = call.data.split(":", 1)[1]
-    if action == "maintenance":
-        settings.maintenance_mode = not settings.maintenance_mode
-        await call.answer(f"Maintenance: {'ON' if settings.maintenance_mode else 'OFF'}", show_alert=True)
-        await call.message.edit_text(_fmt_diag(), reply_markup=_admin_kb().as_markup())
-        return
-    if action == "reload":
-        reload_settings()
-        await call.answer("Reloaded ✅", show_alert=True)
-        await call.message.edit_text(_fmt_diag(), reply_markup=_admin_kb().as_markup())
-        return
-    if action == "nudge":
-        res = await _nudge_self(call.from_user.id)
-        await call.answer(res, show_alert=True)
-        return
-    if action == "diag":
-        await call.message.edit_text(_fmt_diag(), reply_markup=_admin_kb().as_markup())
-        await call.answer()
-        return
-    if action == "stats":
-        # сейчас stats ~= diag; можно расширить
-        await call.message.edit_text(_fmt_diag(), reply_markup=_admin_kb().as_markup())
-        await call.answer()
-        return
-    if action == "char_add_help":
-        await call.answer("Использование:\n/char_add Имя [фандом] [краткая_инфа]", show_alert=True)
-        return
-    if action == "char_photo_help":
-        await call.answer("Пришлите фото с подписью:\n/char_photo <id>", show_alert=True)
-        return
-
-
-# --------- Технические команды ---------
-@router.message(Command("maintenance"))
-async def cmd_maintenance(msg: Message):
-    if not await _require_admin(msg):
-        return
-    settings.maintenance_mode = not settings.maintenance_mode
-    await msg.answer(f"Maintenance: {'ON' if settings.maintenance_mode else 'OFF'}")
-
-
-@router.message(Command("reload"))
-async def cmd_reload(msg: Message):
-    if not await _require_admin(msg):
-        return
-    reload_settings()
-    await msg.answer("Config reloaded ✅")
-
-
-@router.message(Command("nudge_now"))
-async def cmd_nudge_now(msg: Message):
-    if not await _require_admin(msg):
-        return
-    res = await _nudge_self(msg.from_user.id)
-    await msg.answer(res)
-
-
-@router.message(Command("diag"))
-async def cmd_diag(msg: Message):
-    if not await _require_admin(msg):
-        return
-    await msg.answer(_fmt_diag())
-
-
-@router.message(Command("stats"))
-async def cmd_stats(msg: Message):
-    if not await _require_admin(msg):
-        return
-    await msg.answer(_fmt_diag())
-
-
-# --------- Персонажи ---------
-@router.message(Command("char_add"))
-async def cmd_char_add(msg: Message):
-    if not await _require_admin(msg):
-        return
-    # /char_add <name> [fandom] [info_short...]
-    parts = (msg.text or "").split(maxsplit=2)
-    if len(parts) < 2:
-        return await msg.answer(
-            "Использование: /char_add <имя> [фандом] [краткая_инфа]\n"
-            "Пример: <code>/char_add Furina Genshin 'Hydro Archon'</code>"
-        )
-    name = parts[1]
-    fandom = None
-    info = None
-    if len(parts) >= 3:
-        tmp = parts[2].split(maxsplit=1)
-        fandom = tmp[0]
-        info = tmp[1] if len(tmp) > 1 else None
-    cid = storage.ensure_character(name, fandom=fandom, info_short=info)
-    await msg.answer(
-        f"Персонаж «{_escape(name)}» создан (id=<code>{cid}</code>).\n"
-        "Пришлите фото с подписью: <code>/char_photo &lt;id&gt;</code>"
+@router.callback_query(F.data == "prof:sub")
+async def cb_sub(call: CallbackQuery):
+    u = storage.get_user(call.from_user.id) or {}
+    text = (
+        "Подписка управляется вручную. В планах — автоматизация.\n"
+        "Текущий уровень: <b>{}</b>".format((u.get("subscription") or "free").lower())
     )
+    kb = InlineKeyboardBuilder()
+    kb.button(text="⬅ Назад", callback_data="prof:back")
+    kb.adjust(1)
+    await call.message.edit_text(text, reply_markup=kb.as_markup())
+    await call.answer()
 
 
-@router.message(Command("char_photo"))
-async def cmd_char_photo(msg: Message):
-    if not await _require_admin(msg):
-        return
-    # Разбираем char_id из текста или подписи (на случай фото с подписью)
-    char_id: Optional[int] = None
-    for source in (msg.text or "", msg.caption or ""):
-        if not source:
-            continue
-        ps = source.split()
-        if len(ps) >= 2 and ps[0] == "/char_photo":
-            try:
-                char_id = int(ps[1])
-                break
-            except Exception:
-                pass
-    if not char_id:
-        return await msg.answer(
-            "Использование: отправьте фото с подписью: <code>/char_photo &lt;id&gt;</code>"
-        )
+@router.callback_query(F.data == "prof:mode")
+async def cb_mode(call: CallbackQuery):
+    u = storage.get_user(call.from_user.id) or {}
+    new_mode = "live" if (u.get("default_chat_mode") or "rp") == "rp" else "rp"
+    storage.set_user_field(call.from_user.id, "default_chat_mode", new_mode)
+    u = storage.get_user(call.from_user.id) or {}
+    await call.message.edit_text(_profile_text(u), reply_markup=_profile_kb(u))
+    await call.answer("Режим обновлён")
 
-    # file_id из текущего сообщения или из reply
-    file_id: Optional[str] = None
-    if msg.photo:
-        file_id = msg.photo[-1].file_id
-    elif msg.reply_to_message and msg.reply_to_message.photo:
-        file_id = msg.reply_to_message.photo[-1].file_id
-    if not file_id:
-        return await msg.answer(
-            "Пришлите фото с подписью команды или ответом на фото.\n"
-            "Пример: <code>/char_photo 123</code>"
-        )
 
-    # Скачиваем фото в media/characters/<id>_<ts>.<ext>
+@router.callback_query(F.data == "prof:settings")
+async def cb_settings(call: CallbackQuery):
+    u = storage.get_user(call.from_user.id) or {}
+    kb = InlineKeyboardBuilder()
+    # Убрали «📏 Длина ответов» (везде Авто). Остальное — как было.
+    kb.button(text=f"🧩 Вид промтов ({u.get('default_resp_size') or 'auto'})", callback_data="set:prompts")
+    kb.button(text="🗜 Автосжатие: {}".format('вкл' if settings.limits.auto_compress_default else 'выкл'), callback_data="set:compress")
+    kb.button(text="⚡ Настройка Live", callback_data="set:live")
+    kb.button(text="🌍 Часовой пояс", callback_data="set:tz")
+    kb.button(text="⬅ Назад", callback_data="prof:back")
+    kb.adjust(1)
+    await call.message.edit_text("Настройки:", reply_markup=kb.as_markup())
+    await call.answer()
+
+
+@router.callback_query(F.data == "prof:info")
+async def cb_info(call: CallbackQuery):
+    await call.answer("Бот Peek. Настройки сохраняются автоматически. /reload перезагружает конфиг.")
+
+
+@router.callback_query(F.data == "prof:back")
+async def cb_back(call: CallbackQuery):
+    u = storage.get_user(call.from_user.id) or {}
+    await call.message.edit_text(_profile_text(u), reply_markup=_profile_kb(u))
+    await call.answer()
+
+
+# ---- Live Settings (как было, без «длины ответов») ----
+
+@router.callback_query(F.data == "set:live")
+async def cb_set_live(call: CallbackQuery):
+    u = storage.get_user(call.from_user.id) or {}
+    live_on = bool(u.get("proactive_enabled") or 0)
+    kb = InlineKeyboardBuilder()
+    kb.button(text=("🟢 Выключить Live" if live_on else "🟢 Включить Live"), callback_data="set:live:toggle")
+    kb.button(text=f"В день: {int(u.get('pro_per_day') or 2)}", callback_data="set:live:per")
+    kb.button(text=f"Окно: {u.get('pro_window_local') or '09:00-21:00'}", callback_data="set:live:win")
+    kb.button(text=f"Пауза: {int(u.get('pro_min_gap_min') or 10)} мин", callback_data="set:live:gap")
+    kb.button(text="⬅ Назад", callback_data="prof:settings")
+    kb.adjust(1)
+    await call.message.edit_text(
+        "Настройка Live:\n— Сообщения по случайным таймингам в течение суток.\n— Можно включить/выключить и настроить частоту.",
+        reply_markup=kb.as_markup()
+    )
+    await call.answer()
+
+
+@router.callback_query(F.data == "set:live:toggle")
+async def cb_set_live_toggle(call: CallbackQuery):
+    u = storage.get_user(call.from_user.id) or {}
+    live_on = 0 if (u.get("proactive_enabled") or 0) else 1
+    storage.set_user_field(call.from_user.id, "proactive_enabled", live_on)
+    # Сейчас окно не используется планировщиком, но оставим UI — совместимость.
+    await cb_set_live(call)
+
+
+@router.callback_query(F.data == "set:live:per")
+async def cb_set_live_per(call: CallbackQuery):
+    u = storage.get_user(call.from_user.id) or {}
+    # Цикл значений: 2→3→5→1→2
+    val = int(u.get("pro_per_day") or 2)
+    cycle = [2, 3, 5, 1]
     try:
-        fl = await msg.bot.get_file(file_id)
-        ext = Path(fl.file_path or "photo.jpg").suffix or ".jpg"
-        save_name = f"{char_id}_{int(time.time())}{ext}"
-        save_path = MEDIA_DIR / save_name
-        await msg.bot.download(file=fl.file_id, destination=save_path)
-    except TelegramBadRequest:
-        # fallback: другие версии aiogram могут требовать объект get_file(...) в download
-        try:
-            fl = await msg.bot.get_file(file_id)
-            ext = Path(fl.file_path or "photo.jpg").suffix or ".jpg"
-            save_name = f"{char_id}_{int(time.time())}{ext}"
-            save_path = MEDIA_DIR / save_name
-            await msg.bot.download(file=fl, destination=save_path)
-        except Exception as e:
-            return await msg.answer(f"Не удалось скачать фото: <code>{_escape(str(e))}</code>")
-    except Exception as e:
-        return await msg.answer(f"Не удалось скачать фото: <code>{_escape(str(e))}</code>")
+        nxt = cycle[(cycle.index(val) + 1) % len(cycle)]
+    except ValueError:
+        nxt = 2
+    storage.set_user_field(call.from_user.id, "pro_per_day", nxt)
+    await cb_set_live(call)
 
-    # Пытаемся сохранить путь; если нет такой функции — сохраним file_id
+
+@router.callback_query(F.data == "set:live:win")
+async def cb_set_live_win(call: CallbackQuery):
+    # UI сохраним, но планировщик окна не использует.
+    u = storage.get_user(call.from_user.id) or {}
+    win = (u.get("pro_window_local") or "09:00-21:00")
+    presets = ["09:00-21:00", "10:00-22:00", "12:00-20:00", "08:00-18:00"]
+    nxt = presets[(presets.index(win) + 1) % len(presets)]
+    storage.set_user_field(call.from_user.id, "pro_window_local", nxt)
+    # проставим совместимое UTC‑поле, если используется где‑то ещё
+    tz = int((u.get("tz_offset_min") or 180))
+    def _to_utc(w: str) -> str:
+        a, b = w.split("-")
+        parse = lambda s: int(s[:2]) * 60 + int(s[3:5])
+        fmt = lambda m: f"{(m // 60) % 24:02d}:{m % 60:02d}"
+        da, db = parse(a) - tz, parse(b) - tz
+        return f"{fmt(da)}-{fmt(db)}"
+    storage.set_user_field(call.from_user.id, "pro_window_utc", _to_utc(nxt))
+    await cb_set_live(call)
+
+
+@router.callback_query(F.data == "set:live:gap")
+async def cb_set_live_gap(call: CallbackQuery):
+    u = storage.get_user(call.from_user.id) or {}
+    val = int(u.get("pro_min_gap_min") or 10)
+    cycle = [5, 10, 15, 30, 60, 120]
     try:
-        storage.set_character_photo_path(char_id, str(save_path.as_posix()))  # type: ignore[attr-defined]
-    except Exception:
-        # старый фолбэк
-        storage.set_character_photo(char_id, file_id)
+        nxt = cycle[(cycle.index(val) + 1) % len(cycle)]
+    except ValueError:
+        nxt = 10
+    storage.set_user_field(call.from_user.id, "pro_min_gap_min", nxt)
+    await cb_set_live(call)
 
-    await msg.answer("Фото сохранено ✅\nПуть: <code>{_}</code>".format(_=save_path.as_posix()))
+
+# ---- Другие настройки (оставлены) ----
+
+@router.callback_query(F.data == "set:prompts")
+async def cb_set_prompts(call: CallbackQuery):
+    u = storage.get_user(call.from_user.id) or {}
+    size = (u.get("default_resp_size") or "auto")
+    order = ["small", "medium", "large", "auto"]  # в UI не показываем «длину», но вид промтов оставлен
+    nxt = order[(order.index(size) + 1) % len(order)]
+    storage.set_user_field(call.from_user.id, "default_resp_size", nxt)
+    await cb_settings(call)
+
+
+@router.callback_query(F.data == "set:compress")
+async def cb_set_compress(call: CallbackQuery):
+    settings.limits.auto_compress_default = not settings.limits.auto_compress_default
+    await cb_settings(call)
+
+
+@router.callback_query(F.data == "set:tz")
+async def cb_set_tz(call: CallbackQuery):
+    kb = InlineKeyboardBuilder()
+    kb.button(text="⬅ Назад", callback_data="prof:settings")
+    kb.adjust(1)
+    await call.message.edit_text(
+        "Выбор часового пояса доступен на онбординге. Временно используйте настройку окна Live.",
+        reply_markup=kb.as_markup(),
+    )
+    await call.answer()
