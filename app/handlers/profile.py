@@ -1,4 +1,5 @@
-# app/profile.py
+"""User profile: balance, model settings, Live mode and other options."""
+
 from __future__ import annotations
 
 from aiogram import Router, F

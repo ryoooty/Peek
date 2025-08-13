@@ -75,10 +75,6 @@ async def to_profile(msg: Message):
 
 @router.message(F.text == "💰 Баланс")
 async def to_balance(msg: Message):
-    from app.handlers.profile import cb_balance
+    from app.handlers.balance import cmd_balance
 
-    class FakeCall:
-        from_user = msg.from_user
-        message = msg
-
-    await cb_balance(FakeCall())  # переиспользуем коллбек
+    await cmd_balance(msg)

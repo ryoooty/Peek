@@ -74,7 +74,6 @@ async def main():
     dp.include_router(characters_handlers.router)  # карточки персонажей
     dp.include_router(profile_handlers.router)     # профиль/настройки
     dp.include_router(balance_handlers.router)     # баланс, промо, (оплата при необходимости)
-      # админ-команды
     dp.include_router(chats_handlers.router)       # чат-логика и LLM — ПОСЛЕДНИМ!
     
     await _set_bot_commands(bot)    
