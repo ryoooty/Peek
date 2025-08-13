@@ -3,6 +3,14 @@ class FType:
         return self
     def __eq__(self, other):
         return True
+    def __call__(self, *args, **kwargs):
+        return self
+    def __and__(self, other):
+        return self
+    def __rand__(self, other):
+        return self
+    def __invert__(self):
+        return self
 
 class Router:
     def __init__(self, *args, **kwargs):

@@ -854,6 +854,28 @@ def daily_bonus_free_users() -> List[int]:
 
 
 # ------------- Proactive helpers -------------
+def select_proactive_candidates() -> List[int]:
+    """Return IDs of users eligible for proactive actions.
+
+    A user is considered a candidate if proactive nudges are enabled,
+    the user is not banned and they have at least one chat.  Only the
+    user identifier (``tg_id``) is returned.
+    """
+
+    rows = _q(
+        """
+        SELECT u.tg_id
+          FROM users AS u
+         WHERE u.proactive_enabled = 1
+           AND COALESCE(u.banned, 0) = 0
+           AND EXISTS (
+                SELECT 1 FROM chats AS c WHERE c.user_id = u.tg_id
+           )
+        """
+    ).fetchall()
+    return [int(r["tg_id"]) for r in rows]
+
+
 def proactive_count_today(user_id: int) -> int:
     r = _q(
         """
