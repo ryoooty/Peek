@@ -271,7 +271,7 @@ async def cb_char_settings(call: CallbackQuery):
     if not ch:
         return await call.answer("Персонаж не найден", show_alert=True)
 
-    r = storage._q(
+    rows = storage.query(
         """
         SELECT COUNT(*) AS c
           FROM messages m
@@ -279,7 +279,8 @@ async def cb_char_settings(call: CallbackQuery):
          WHERE c.user_id=? AND c.char_id=?
         """,
         (call.from_user.id, char_id),
-    ).fetchone()
+    )
+    r = rows[0] if rows else None
     cnt = int(r["c"] or 0)
 
     kb = InlineKeyboardBuilder()

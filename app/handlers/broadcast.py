@@ -24,7 +24,7 @@ def _audience_query(audience: str) -> str:
 
 
 async def _do_broadcast(msg: Message, *, text: str, photo: str | None, audience: str) -> None:
-    rows = storage._q(_audience_query(audience)).fetchall()
+    rows = storage.query(_audience_query(audience))
     user_ids = [int(r["tg_id"]) for r in rows]
     sent = 0
     failed = 0
