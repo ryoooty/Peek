@@ -97,6 +97,10 @@ class Settings(BaseSettings):
     # Maintenance
     maintenance_mode: bool = False
 
+    # Payments
+    boosty_secret: Optional[str] = None
+    donationalerts_secret: Optional[str] = None
+
     # APScheduler (persistent jobstore по желанию)
     apscheduler_persist: bool = False
     jobs_db_path: str = Field(default=str(BASE_DIR / "jobs.db"))
