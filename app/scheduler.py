@@ -58,14 +58,6 @@ def init(bot: Bot) -> None:
     _scheduler.start()
     runtime.set_scheduler(_scheduler)
 
-    _add_job(
-        "daily_bonus:free",
-        "cron",
-        hour=0,
-        minute=5,
-        func=storage.daily_bonus_free_users,
-    )
-
     # Ежеминутный тик на случай подвисших/забытых пользователей:
 
     # Если у юзера включён Live и нет будущих джоб — создадим суточный план.
@@ -136,9 +128,9 @@ def _add_job(job_id: str, trigger: str, **kw) -> None:
 
 async def _daily_bonus() -> None:
     uids = storage.daily_bonus_free_users()
-    if not _bot:
+    if not _bot or not uids:
         return
-    amount = int(settings.nightly_toki_bonus.get("free") or 0)
+    amount = int(settings.subs.nightly_toki_bonus.get("free", 0))
     for uid in uids:
         try:
             await _bot.send_message(uid, f"💰 Ежедневный бонус: +{amount} токов")

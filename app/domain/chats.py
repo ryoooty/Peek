@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import AsyncGenerator, Dict, List, Tuple
+
+import math
 
 from app import storage
 from app.config import settings
@@ -57,6 +60,7 @@ async def _collect_context(
             usage_out=summary.usage_out,
         )
         _apply_billing(user_id, model, summary.usage_in, summary.usage_out)
+        storage.add_cache_tokens(user_id, summary.usage_in + summary.usage_out)
         tail = res[1:][-20:]
         res = [
             dict(role="system", content=system_prompt),
@@ -143,6 +147,7 @@ async def _maybe_compress_history(user_id: int, chat_id: int, model: str) -> Non
         usage_out=summary.usage_out,
     )
     _apply_billing(user_id, model, summary.usage_in, summary.usage_out)
+    storage.add_cache_tokens(user_id, summary.usage_in + summary.usage_out)
 
 
 async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
@@ -154,7 +159,9 @@ async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
 
     await _maybe_compress_history(user_id, chat_id, model)
 
-    messages = _collect_context(chat_id) + [dict(role="user", content=text)]
+    messages = await _collect_context(chat_id, user_id=user_id, model=model)
+    messages += [dict(role="user", content=text)]
+
 
 
     r = await provider_chat(
@@ -168,6 +175,7 @@ async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
 
     usage_in = int(r.usage_in or 0)
     usage_out = int(r.usage_out or 0)
+    storage.add_cache_tokens(user_id, usage_in + usage_out)
     billed, deficit = _apply_billing(user_id, model, usage_in, usage_out)
     cost_in, cost_out, cost_cache, cost_total = calc_usage_cost_rub(
         model, usage_in, usage_out
@@ -198,7 +206,10 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[D
 
     await _maybe_compress_history(user_id, chat_id, model)
 
-    messages = _collect_context(chat_id) + [dict(role="user", content=text)]
+    messages = await _collect_context(chat_id, user_id=user_id, model=model)
+    messages += [dict(role="user", content=text)]
+
+
 
 
     async for ev in provider_stream(
@@ -214,6 +225,7 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[D
         elif ev.get("type") == "usage":
             usage_in = int(ev.get("in") or 0)
             usage_out = int(ev.get("out") or 0)
+            storage.add_cache_tokens(user_id, usage_in + usage_out)
             billed, deficit = _apply_billing(user_id, model, usage_in, usage_out)
             cost_in, cost_out, cost_cache, cost_total = calc_usage_cost_rub(
                 model, usage_in, usage_out
