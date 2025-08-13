@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from pathlib import Path
 
 from aiogram import Bot, Dispatcher
@@ -82,7 +83,7 @@ async def main():
     # run/
     try:
         Path("run").mkdir(exist_ok=True)
-        (Path("run") / "main.pid").write_text(str(Path("run").absolute()))
+        (Path("run") / "main.pid").write_text(str(os.getpid()))
     except Exception:
         pass
 
