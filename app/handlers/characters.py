@@ -10,22 +10,26 @@ from aiogram.types.input_file import FSInputFile
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from app import storage
+from app.config import BASE_DIR
 
 router = Router(name="characters")
 
 
 # ---------- helpers ----------
 
+
 def _esc(s: str | None) -> str:
     if not s:
         return ""
     return s.replace("<", "&lt;").replace(">", "&gt;")
+
 
 def _char_card_caption(ch: dict) -> str:
     name = _esc(ch.get("name") or "")
     fandom = _esc(ch.get("fandom") or "—")
     info = _esc(ch.get("info_short") or "")
     return f"<b>{name}</b>\nФандом: <i>{fandom}</i>\n{info}"
+
 
 def _photo_input_for_char(ch: dict):
     """
@@ -49,7 +53,10 @@ def _char_card_kb(user_id: int, char_id: int) -> InlineKeyboardBuilder:
     if has_chats:
         kb.button(text="▶ Продолжить", callback_data=f"char:cont:{char_id}")
     # 2 строка
-    kb.button(text=("★ Убрать из избранного" if is_fav else "☆ В избранное"), callback_data=f"char:fav:{char_id}")
+    kb.button(
+        text=("★ Убрать из избранного" if is_fav else "☆ В избранное"),
+        callback_data=f"char:fav:{char_id}",
+    )
     kb.button(text="💬 Мои чаты", callback_data=f"char:chats:{char_id}")
     # 3 строка
     kb.button(text="📋 Меню", callback_data="chars:menu")
@@ -58,12 +65,18 @@ def _char_card_kb(user_id: int, char_id: int) -> InlineKeyboardBuilder:
     return kb
 
 
-async def _edit_or_send_card(message_or_call, *, media, caption: str, kb: InlineKeyboardBuilder):
+async def _edit_or_send_card(
+    message_or_call, *, media, caption: str, kb: InlineKeyboardBuilder
+):
     """
     media: FSInputFile | str | None
     caption — HTML
     """
-    m = message_or_call.message if isinstance(message_or_call, CallbackQuery) else message_or_call
+    m = (
+        message_or_call.message
+        if isinstance(message_or_call, CallbackQuery)
+        else message_or_call
+    )
 
     if media:
         # Если было фото — пробуем заменить media
@@ -71,7 +84,7 @@ async def _edit_or_send_card(message_or_call, *, media, caption: str, kb: Inline
             try:
                 await m.edit_media(
                     InputMediaPhoto(type="photo", media=media, caption=caption),
-                    reply_markup=kb.as_markup()
+                    reply_markup=kb.as_markup(),
                 )
                 return
             except Exception:
@@ -87,13 +100,29 @@ async def _edit_or_send_card(message_or_call, *, media, caption: str, kb: Inline
 
 # ---------- open card ----------
 
-async def open_character_card(message_or_call: Message | CallbackQuery, *, char_id: int, as_new_message: bool = False):
+
+async def open_character_card(
+    message_or_call: Message | CallbackQuery,
+    *,
+    char_id: int,
+    as_new_message: bool = False,
+):
     user_id = message_or_call.from_user.id
     ch = storage.get_character(char_id)
     if not ch:
         if isinstance(message_or_call, CallbackQuery):
             return await message_or_call.answer("Персонаж не найден", show_alert=True)
         return await message_or_call.answer("Персонаж не найден")
+    if not (ch.get("photo_path") or "").strip():
+        slug = (ch.get("slug") or "").strip()
+        if slug:
+            media_dir = Path(BASE_DIR) / "media" / "characters"
+            for ext in ("jpg", "png"):
+                fp = media_dir / f"{slug}.{ext}"
+                if fp.exists():
+                    storage.set_character_photo_path(char_id, fp.as_posix())
+                    ch["photo_path"] = fp.as_posix()
+                    break
 
     kb = _char_card_kb(user_id, char_id)
     caption = _char_card_caption(ch)
@@ -107,6 +136,7 @@ async def open_character_card(message_or_call: Message | CallbackQuery, *, char_
 
 # ---------- раздел «персонажи» ----------
 
+
 @router.message(Command("characters"))
 async def characters_menu(msg: Message):
     await show_characters_page(msg, page=1)
@@ -118,7 +148,9 @@ def _chars_page_kb(user_id: int, page: int):
     u = storage.get_user(user_id) or {}
     sub = (u.get("subscription") or "free").lower()
     limits = getattr(settings.subs, sub, settings.subs.free)
-    rows = storage.list_characters_for_user(user_id, page=page, page_size=limits.chars_page_size)
+    rows = storage.list_characters_for_user(
+        user_id, page=page, page_size=limits.chars_page_size
+    )
 
     kb = InlineKeyboardBuilder()
     for row in rows:
@@ -152,6 +184,7 @@ async def show_characters_page(msg_or_call: Message | CallbackQuery, page: int):
 
 # ---------- callbacks ----------
 
+
 @router.callback_query(F.data == "chars:menu")
 async def cb_chars_menu(call: CallbackQuery):
     await show_characters_page(call, page=1)
@@ -178,7 +211,9 @@ async def cb_char_fav(call: CallbackQuery):
     sub = (u.get("subscription") or "free").lower()
     limits = getattr(settings.subs, sub, settings.subs.free)
 
-    ok = storage.toggle_fav_char(call.from_user.id, char_id, allow_max=limits.fav_chars_max)
+    ok = storage.toggle_fav_char(
+        call.from_user.id, char_id, allow_max=limits.fav_chars_max
+    )
     if not ok and not storage.is_fav_char(call.from_user.id, char_id):
         await call.answer("Достигнут лимит избранных персонажей", show_alert=True)
 
@@ -190,6 +225,7 @@ async def cb_char_new(call: CallbackQuery):
     char_id = int(call.data.split(":")[2])
     chat_id = storage.create_chat(call.from_user.id, char_id)
     from app.handlers.chats import open_chat_inline
+
     await open_chat_inline(call, chat_id=chat_id)
 
 
@@ -201,6 +237,7 @@ async def cb_char_cont(call: CallbackQuery):
         await call.answer("Нет чатов с персонажем", show_alert=True)
         return
     from app.handlers.chats import open_chat_inline
+
     await open_chat_inline(call, chat_id=int(rows[0]["id"]))
 
 
@@ -214,12 +251,15 @@ async def cb_char_chats(call: CallbackQuery):
 
     kb = InlineKeyboardBuilder()
     for r in rows:
-        kb.button(text=f"{r['seq_no']} — {r['char_name']}", callback_data=f"chat:open:{r['id']}")
+        kb.button(
+            text=f"{r['seq_no']} — {r['char_name']}",
+            callback_data=f"chat:open:{r['id']}",
+        )
     kb.button(text="⬅ Назад", callback_data=f"char:open:{char_id}")
     kb.adjust(1)
 
     ch = storage.get_character(char_id)
-    title = _esc(ch['name']) if ch else "персонажем"
+    title = _esc(ch["name"]) if ch else "персонажем"
     await call.message.edit_text(f"Чаты с {title}:", reply_markup=kb.as_markup())
     await call.answer()
 
@@ -243,7 +283,9 @@ async def cb_char_settings(call: CallbackQuery):
     cnt = int(r["c"] or 0)
 
     kb = InlineKeyboardBuilder()
-    kb.button(text=f"📊 Сообщений с { _esc(ch['name']) }: {cnt}", callback_data="char:noop")
+    kb.button(
+        text=f"📊 Сообщений с { _esc(ch['name']) }: {cnt}", callback_data="char:noop"
+    )
     # «Убрать персонажа из сохранённых» — это «снять из избранного»
     if storage.is_fav_char(call.from_user.id, char_id):
         kb.button(text="🗑 Убрать из избранных", callback_data=f"char:fav:{char_id}")

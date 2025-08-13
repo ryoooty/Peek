@@ -13,12 +13,12 @@ from app.mw.maintenance import MaintenanceMiddleware
 from app.config import settings, register_reload_hook
 from app import storage
 # bot.py, в main() после создания bot и dp
-from app import scheduler
+from app import scheduler, runtime
 
 
-# Routers (подключаем команды и меню раньше, чат — последним)
 
 
+# Routers (подключаем команды и меню раньше, чат — последн
 from app.handlers import admin as admin_handlers
 from app.handlers import user as user_handlers
 from app.handlers import characters as characters_handlers
@@ -27,10 +27,8 @@ from app.handlers import balance as balance_handlers
 from app.handlers import chats as chats_handlers  # <- чат-обработчики ДОЛЖНЫ идти последними
 from app.middlewares.subscription import SubscriptionGateMiddleware
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-)
+runtime.setup_logging()
+
 
 
 async def _set_bot_commands(bot: Bot) -> None:
@@ -61,10 +59,13 @@ async def main():
     dp.update.outer_middleware(MaintenanceMiddleware())
     dp.update.outer_middleware(SubscriptionGateMiddleware())
     dp.update.outer_middleware(MaintenanceMiddleware())
+
     # Подключаем роутеры. ВАЖНО: «chats» — ПОСЛЕДНИЙ, чтобы не перехватывать slash-команды.
-    dp.include_router(admin_handlers.router) 
+    dp.include_router(admin_handlers.router)
+    dp.include_router(broadcast_handlers.router)
     dp.include_router(user_handlers.router)        # /start, главное меню
     dp.include_router(characters_handlers.router)  # карточки персонажей
+
     dp.include_router(profile_handlers.router)     # профиль/настройки
     dp.include_router(balance_handlers.router)     # баланс, промо, (оплата при необходимости)
       # админ-команды

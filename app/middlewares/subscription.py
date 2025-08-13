@@ -36,6 +36,7 @@ class SubscriptionGateMiddleware(BaseMiddleware):
         if user_id in settings.admin_ids or is_start or is_gate_check:
             return await handler(event, data)
 
+
         # Проверка подписки
         try:
             member = await data["bot"].get_chat_member(chat_id=channel_id, user_id=user_id)
