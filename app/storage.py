@@ -394,10 +394,6 @@ def set_character_photo_path(char_id: int, file_path: str) -> None:
 
 
 def set_character_photo(char_id: int, file_id: str | None) -> None:
-    _exec("UPDATE characters SET photo_id=? WHERE id=?", (file_id, char_id))
-
-
-def set_character_photo(char_id: int, file_id: str | None) -> None:
     """Store Telegram file ID for a character photo."""
     _exec("UPDATE characters SET photo_id=? WHERE id=?", (file_id, char_id))
 
