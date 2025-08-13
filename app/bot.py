@@ -21,6 +21,7 @@ from app import scheduler, runtime
 
 # Routers (подключаем команды и меню раньше, чат — последн
 from app.handlers import admin as admin_handlers
+from app.handlers import broadcast as broadcast_handlers
 from app.handlers import user as user_handlers
 from app.handlers import characters as characters_handlers
 from app.handlers import profile as profile_handlers
