@@ -54,6 +54,14 @@ def init(bot: Bot) -> None:
     _scheduler = AsyncIOScheduler(timezone=dt.timezone.utc)
     _scheduler.start()
 
+    _add_job(
+        "daily_bonus:free",
+        "cron",
+        hour=0,
+        minute=5,
+        func=storage.daily_bonus_free_users,
+    )
+
     # Ежеминутный тик на случай подвисших/забытых пользователей:
     # Если у юзера включён Live и нет будущих джоб — создадим суточный план.
     _add_job("proactive:tick", "interval", minutes=1, func=_tick_fill_plans)
