@@ -6,6 +6,8 @@ from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
+from app.utils.tz import tz_keyboard
+
 from app import storage
 from app.config import settings
 
@@ -234,11 +236,25 @@ async def cb_set_compress(call: CallbackQuery):
 
 @router.callback_query(F.data == "set:tz")
 async def cb_set_tz(call: CallbackQuery):
-    kb = InlineKeyboardBuilder()
-    kb.button(text="⬅ Назад", callback_data="prof:settings")
-    kb.adjust(1)
     await call.message.edit_text(
-        "Выбор часового пояса доступен на онбординге. Временно используйте настройку окна Live.",
-        reply_markup=kb.as_markup(),
+        "Выберите часовой пояс:", reply_markup=tz_keyboard("tzprof")
     )
     await call.answer()
+
+
+@router.callback_query(F.data.startswith("tzprof:"))
+async def cb_tz_prof(call: CallbackQuery):
+    try:
+        offset = int(call.data.split(":", 1)[1])
+    except Exception:
+        await call.answer("Некорректное значение", show_alert=True)
+        return
+    storage.set_user_field(call.from_user.id, "tz_offset_min", offset)
+    u = storage.get_user(call.from_user.id) or {}
+    await call.message.edit_text(_profile_text(u), reply_markup=_profile_kb(u))
+    await call.answer("Часовой пояс обновлён")
+
+
+@router.message(Command("tz"))
+async def cmd_tz(msg: Message):
+    await msg.answer("Выберите часовой пояс:", reply_markup=tz_keyboard("tzprof"))

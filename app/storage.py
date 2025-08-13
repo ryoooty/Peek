@@ -193,7 +193,12 @@ def _migrate() -> None:
 
 
 # ------------- Users -------------
-def ensure_user(user_id: int, username: Optional[str] = None, *, default_tz_min: int = 180) -> None:
+def ensure_user(
+    user_id: int,
+    username: Optional[str] = None,
+    *,
+    default_tz_min: int | None = None,
+) -> None:
     row = _q("SELECT tg_id FROM users WHERE tg_id=?", (user_id,)).fetchone()
     if row:
         if username:
