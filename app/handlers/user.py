@@ -6,8 +6,6 @@ from aiogram.filters import CommandStart, CommandObject
 from aiogram.types import (
     Message,
     ReplyKeyboardMarkup,
-    InlineKeyboardMarkup,
-    InlineKeyboardButton,
     CallbackQuery,
 )
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
@@ -42,7 +40,6 @@ async def _check_subscription(msg: Message) -> bool:
         return status in ("member", "administrator", "creator")
     except Exception:
         return True
-
 
 
 @router.message(CommandStart(deep_link=True))
