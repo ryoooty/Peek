@@ -17,3 +17,4 @@ def tz_keyboard() -> InlineKeyboardMarkup:
     if row:
         keyboard.append(row)
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
+

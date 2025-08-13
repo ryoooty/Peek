@@ -7,6 +7,7 @@ from app.config import settings
 
 
 class SubscriptionGateMiddleware(BaseMiddleware):
+
     """
     Проверяет подписку на канал для всех действий, кроме /start и админов.
     Бот должен быть админом канала.
@@ -18,17 +19,21 @@ class SubscriptionGateMiddleware(BaseMiddleware):
             return await handler(event, data)
 
         user_id = None
+
         is_start = False
         chat_id = None
+
 
         if isinstance(event, Message):
             user_id = event.from_user.id if event.from_user else None
             chat_id = event.chat.id
+
             is_start = (event.text or "").startswith("/start")
         elif isinstance(event, CallbackQuery):
             user_id = event.from_user.id if event.from_user else None
             chat_id = event.message.chat.id if event.message else None
             is_start = False
+
 
         if not user_id:
             return await handler(event, data)
@@ -37,6 +42,7 @@ class SubscriptionGateMiddleware(BaseMiddleware):
             return await handler(event, data)
 
         if is_start:
+
             return await handler(event, data)
 
         # Проверка подписки

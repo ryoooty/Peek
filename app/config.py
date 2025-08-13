@@ -83,6 +83,7 @@ class Settings(BaseSettings):
     admin_ids: List[int] = Field(default_factory=list)
     db_path: str = Field(default=str(BASE_DIR / "data.db"))
     env: str = Field(default="dev")
+    log_level: str = "INFO"
 
     # Provider
     deepseek_api_key: Optional[str] = None
@@ -131,6 +132,7 @@ class Settings(BaseSettings):
     global_typing_enabled: bool = True
 
 settings = Settings()
+config_version = 1
 
 
 # --------- Reload helpers ---------
@@ -184,6 +186,7 @@ def _apply_overrides(dst: Settings, overrides: Dict[str, Any]) -> None:
 
 
 def reload_settings() -> Settings:
+    global config_version
     # перечитать ENV
     new = Settings()
     # подтянуть YAML/JSON
@@ -192,6 +195,7 @@ def reload_settings() -> Settings:
     # применить inplace
     for k, v in new.model_dump().items():
         setattr(settings, k, v)
+    config_version += 1
     # нотифицировать хуки
     for fn in list(_ReloadHooks):
         try:
