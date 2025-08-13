@@ -8,8 +8,8 @@ from app.config import settings
 
 class SubscriptionGateMiddleware(BaseMiddleware):
     """
-    Проверяет подписку на канал для всех действий, кроме слэш-команд и админов.
-    Бот должен быть админом канала.
+    Проверяет подписку на канал для всех действий, кроме `/start`,
+    `gate:check` и админов. Бот должен быть админом канала.
     """
 
     async def __call__(self, handler, event: TelegramObject, data):
@@ -18,17 +18,19 @@ class SubscriptionGateMiddleware(BaseMiddleware):
             return await handler(event, data)
 
         user_id = None
-        is_command = False
         chat_id = None
+        skip_check = False
 
         if isinstance(event, Message):
             user_id = event.from_user.id if event.from_user else None
             chat_id = event.chat.id
-            is_command = (event.text or "").startswith("/")
+            text = (event.text or "").split()[0]
+            if text.startswith("/"):
+                skip_check = text in ("/start", "/gate:check")
         elif isinstance(event, CallbackQuery):
             user_id = event.from_user.id if event.from_user else None
             chat_id = event.message.chat.id if event.message else None
-            is_command = False
+            skip_check = event.data == "gate:check"
 
         if not user_id:
             return await handler(event, data)
@@ -36,7 +38,7 @@ class SubscriptionGateMiddleware(BaseMiddleware):
         if user_id in settings.admin_ids:
             return await handler(event, data)
 
-        if is_command:
+        if skip_check:
             return await handler(event, data)
 
         # Проверка подписки
