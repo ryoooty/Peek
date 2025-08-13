@@ -28,7 +28,7 @@ class TimezoneMiddleware(BaseMiddleware):
 
         u = storage.get_user(user_id) or {}
         if u.get("tz_offset_min") is None:
-            kb = tz_keyboard()
+            kb = tz_keyboard("tz")
             text = "Выберите ваш часовой пояс:"
             if isinstance(event, Message):
                 await event.answer(text, reply_markup=kb)
