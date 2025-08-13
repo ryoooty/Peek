@@ -25,13 +25,7 @@ from app.handlers import characters as characters_handlers
 from app.handlers import profile as profile_handlers
 from app.handlers import balance as balance_handlers
 from app.handlers import chats as chats_handlers  # <- чат-обработчики ДОЛЖНЫ идти последними
-
-
-# Если используете подписочный гейт, импортируйте из вашего модуля:
-try:
-    from app.middlewares.subscription import SubscriptionGateMiddleware
-except Exception:
-    SubscriptionGateMiddleware = None  # опционально
+from app.middlewares.subscription import SubscriptionGateMiddleware
 
 runtime.setup_logging()
 
@@ -62,12 +56,8 @@ async def main():
     dp = Dispatcher()
 
     # Middlewares (внешние)
-
     dp.update.outer_middleware(MaintenanceMiddleware())
-    if SubscriptionGateMiddleware:
-        dp.update.outer_middleware(SubscriptionGateMiddleware())
-    if TimezoneMiddleware:
-        dp.update.outer_middleware(TimezoneMiddleware())
+    dp.update.outer_middleware(SubscriptionGateMiddleware())
     dp.update.outer_middleware(MaintenanceMiddleware())
 
     # Подключаем роутеры. ВАЖНО: «chats» — ПОСЛЕДНИЙ, чтобы не перехватывать slash-команды.
