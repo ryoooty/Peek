@@ -79,6 +79,10 @@ def _migrate() -> None:
         is_chatting          INTEGER DEFAULT 0
     )"""
     )
+
+    if not _has_col("messages", "usage_cost_rub"):
+        _exec("ALTER TABLE messages ADD COLUMN usage_cost_rub REAL")
+
     if not _has_col("users", "pro_free_used"):
         _exec("ALTER TABLE users ADD COLUMN pro_free_used INTEGER DEFAULT 0")
 
@@ -149,6 +153,7 @@ def _migrate() -> None:
         content     TEXT NOT NULL,
         usage_in    INTEGER,
         usage_out   INTEGER,
+        usage_cost_rub REAL,
         created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
     )"""
     )
@@ -330,7 +335,7 @@ def create_chat(
     ).fetchone()
     seq_no = int((r["c"] or 0) + 1)
     cur = _exec(
-        "INSERT INTO chats(user_id,char_id,mode,resp_size,seq_no) VALUES (?,?,?,?,?)",
+        "INSERT INTO chats(user_id,char_id,mode,resp_size,seq_no) VALUES (?,?,?,?,?,?)",
         (user_id, char_id, mode, resp_size, seq_no),
     )
     return int(cur.lastrowid)
@@ -423,10 +428,11 @@ def add_message(
     content: str,
     usage_in: int | None = None,
     usage_out: int | None = None,
+    usage_cost_rub: float | None = None,
 ) -> int:
     cur = _exec(
-        "INSERT INTO messages(chat_id,is_user,content,usage_in,usage_out) VALUES (?,?,?,?,?)",
-        (chat_id, 1 if is_user else 0, content, usage_in, usage_out),
+        "INSERT INTO messages(chat_id,is_user,content,usage_in,usage_out, usage_cost_rub) VALUES (?,?,?,?,?,?)",
+        (chat_id, 1 if is_user else 0, content, usage_in, usage_out, usage_cost_rub),
     )
     _exec("UPDATE chats SET updated_at=CURRENT_TIMESTAMP WHERE id=?", (chat_id,))
     return int(cur.lastrowid)
@@ -516,6 +522,18 @@ def user_totals(user_id: int) -> Dict[str, Any]:
         top_count=int(top["cnt"] or 0) if top else 0,
     )
 
+
+def total_usage_cost_rub(user_id: int) -> float:
+    r = _q(
+        """
+        SELECT COALESCE(SUM(m.usage_cost_rub),0) AS rub
+          FROM messages m
+          JOIN chats c ON c.id=m.chat_id
+         WHERE c.user_id=? AND m.is_user=0
+        """,
+        (user_id,),
+    ).fetchone()
+    return float(r["rub"] or 0.0)
 
 # ------------- Billing (toki/tokens) -------------
 def add_toki(user_id: int, amount: int, meta: str = "bonus") -> None:

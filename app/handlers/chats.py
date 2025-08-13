@@ -301,15 +301,30 @@ async def chatting_text(msg: Message):
                         full += (("\n" if full else "") + buf.strip())
                     usage_in = int(ev.get("usage_in") or 0)
                     usage_out = int(ev.get("usage_out") or 0)
-                    storage.add_message(chat_id, is_user=False, content=full, usage_in=usage_in, usage_out=usage_out)
+                    cost_total = float(ev.get("cost_total") or 0)
+                    storage.add_message(
+                        chat_id,
+                        is_user=False,
+                        content=full,
+                        usage_in=usage_in,
+                        usage_out=usage_out,
+                        usage_cost_rub=cost_total,
+                    )
                     if int(ev.get("deficit") or 0) > 0:
                         await msg.answer("⚠ Баланс токенов на нуле. Пополните баланс, чтобы продолжить комфортно.")
                                 # ответ в live завершён — теперь стартуем таймер «10 минут тишины»
-                    schedule_silence_check(msg.from_user.id, chat_id, delay_sec=600)    
+                    schedule_silence_check(msg.from_user.id, chat_id, delay_sec=600)
         else:
             # RP: один ответ
             r = await chat_turn(msg.from_user.id, chat_id, msg.text)
-            storage.add_message(chat_id, is_user=False, content=r.text, usage_in=r.usage_in, usage_out=r.usage_out)
+            storage.add_message(
+                chat_id,
+                is_user=False,
+                content=r.text,
+                usage_in=r.usage_in,
+                usage_out=r.usage_out,
+                usage_cost_rub=r.cost_total,
+            )
             await msg.answer(r.text)
             if r.deficit > 0:
                 await msg.answer("⚠ Баланс токенов на нуле. Пополните баланс, чтобы продолжить комфортно.")
