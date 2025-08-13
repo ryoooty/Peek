@@ -44,6 +44,15 @@ def _q(sql: str, params: Tuple | Dict | None = None) -> sqlite3.Cursor:
     return _conn.execute(sql, params or ())
 
 
+def query(sql: str, params: Tuple | Dict | None = None) -> List[sqlite3.Row]:
+    """Execute a SELECT query and return all rows.
+
+    This is a public helper that wraps :func:`_q` and exposes the results as a
+    list of :class:`sqlite3.Row` objects instead of a cursor.
+    """
+    return _q(sql, params).fetchall()
+
+
 # --- Simple cache for heavy stat queries ---
 def _cache_get(key: str, ttl: int) -> Any | None:
     data = _stats_cache.get(key)

@@ -240,10 +240,11 @@ def _last_message_recent(chat_id: int, secs: int) -> bool:
 
 def _last_proactive_ts(user_id: int) -> Optional[int]:
     try:
-        r = storage._q(
+        rows = storage.query(
             "SELECT strftime('%s', COALESCE(last_proactive_at, 0)) AS ts FROM users WHERE tg_id=?",
             (user_id,),
-        ).fetchone()
+        )
+        r = rows[0] if rows else None
         return int(r["ts"]) if r and r["ts"] else None
     except Exception:
         return None

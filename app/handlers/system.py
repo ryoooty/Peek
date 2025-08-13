@@ -20,7 +20,7 @@ async def cmd_reload(msg: Message):
     # Пересоберём джобы для всех пользователей
     from app import storage
     try:
-        rows = storage._q("SELECT tg_id FROM users").fetchall()
+        rows = storage.query("SELECT tg_id FROM users")
         for r in rows:
             rebuild_user_jobs(int(r["tg_id"]))
     except Exception:
@@ -76,7 +76,7 @@ async def cmd_health(msg: Message):
     tables = ["users", "characters", "chats", "messages"]
     try:
         for t in tables:
-            storage._q(f"SELECT 1 FROM {t} LIMIT 1")
+            storage.query(f"SELECT 1 FROM {t} LIMIT 1")
     except Exception as e:
         runtime.incr_error("db")
         await msg.answer(f"DB error: {e}")
