@@ -8,27 +8,32 @@ from aiogram.types import Message
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types.input_file import FSInputFile  # если будете где-то отправлять локальные файлы
 
-from app.config import BASE_DIR, settings
+
 from app import storage
+from app.config import BASE_DIR, settings
+
 
 router = Router(name="admin")
 
 
 async def _require_admin(msg: Message) -> bool:
     if msg.from_user.id not in settings.admin_ids:
-        await msg.answer("Нет доступа")
+
+        try:
+            await msg.answer("Доступ запрещён")
+        except Exception:
+            pass
         return False
     return True
 
-
 MEDIA_DIR = Path(BASE_DIR) / "media" / "characters"
 MEDIA_DIR.mkdir(parents=True, exist_ok=True)
-
 
 @router.message(Command("char_photo"))
 async def cmd_char_photo(msg: Message):
     if not await _require_admin(msg):
         return
+
     parts = (msg.text or "").split()
     if len(parts) < 2 and not (msg.caption or "").startswith("/char_photo"):
         return await msg.answer(
@@ -78,42 +83,12 @@ async def cmd_char_photo(msg: Message):
         except Exception as e:
             return await msg.answer(f"Не удалось скачать фото: <code>{e}</code>")
 
-    # сохраняем путь в БД
+
+    # сохраняем идентификатор и путь в БД
+    storage.set_character_photo(char_id, file_id)
     storage.set_character_photo_path(char_id, str(save_path.as_posix()))
-    # (опц.) можно сбросить старый photo_id, чтобы точно использовался путь:
-    # storage.set_character_photo(char_id, None)
 
-    await msg.answer("Фото сохранено ✅\nПуть: <code>{}</code>".format(save_path.as_posix()))
+    await msg.answer(
+        "Фото сохранено ✅\nПуть: <code>{}</code>".format(save_path.as_posix())
+    )
 
-
-@router.message(Command("stats"))
-async def cmd_stats(msg: Message):
-    if not await _require_admin(msg):
-        return
-    days = storage.usage_by_day()
-    weeks = storage.usage_by_week()
-    top = storage.top_characters()
-    active = storage.active_users()
-    lines = ["<b>Статистика</b>"]
-    if days:
-        lines.append("\nПо дням:")
-        for r in days:
-            lines.append(
-                f"{r['day']}: {r['messages']} msgs ({r['in_tokens']}/{r['out_tokens']})"
-            )
-    if weeks:
-        lines.append("\nПо неделям:")
-        for r in weeks:
-            lines.append(
-                f"{r['week']}: {r['messages']} msgs ({r['in_tokens']}/{r['out_tokens']})"
-            )
-    if top:
-        lines.append("\nТоп персонажей:")
-        for r in top:
-            lines.append(f"{r['name']}: {r['cnt']}")
-    if active:
-        lines.append("\nАктивные пользователи:")
-        for r in active:
-            uname = r['username'] or r['user_id']
-            lines.append(f"{uname}: {r['cnt']}")
-    await msg.answer("\n".join(lines))

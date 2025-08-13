@@ -43,9 +43,8 @@ def rebuild_all_window_jobs() -> None:
     if not sch:
         return
     try:
-        rows = storage._q("SELECT tg_id FROM users WHERE proactive_enabled=1").fetchall()
-        for r in rows:
-            schedule_window_jobs_for_user(int(r["tg_id"]))
+        for uid in storage.select_proactive_candidates():
+            schedule_window_jobs_for_user(uid)
     except Exception:
         pass
 
