@@ -33,6 +33,8 @@ def test_cb_open_balance_sends_new_message(tmp_path):
     storage.init(tmp_path / "db.sqlite")
     storage.ensure_user(1, "test")
     call = DummyCall(1)
+    import asyncio
+
     asyncio.run(cb_open_balance(call))
     assert call.message.sent and "Баланс" in call.message.sent[0]
     assert "Кэш‑токены" in call.message.sent[0]
@@ -42,6 +44,8 @@ def test_cmd_balance_sends_new_message(tmp_path):
     storage.init(tmp_path / "db2.sqlite")
     storage.ensure_user(2, "test2")
     msg = DummyMessage(2)
+    import asyncio
+
     asyncio.run(cmd_balance(msg))
     assert msg.sent and "Баланс" in msg.sent[0]
     assert "Кэш‑токены" in msg.sent[0]

@@ -296,11 +296,6 @@ async def chatting_text(msg: Message):
                             await msg.answer(piece)
                             full += (("\n" if full else "") + piece)
                 elif ev["kind"] == "final":
-                    parts, buf = _extract_sections(buf)
-                    for piece in parts:
-                        if piece and piece.strip():
-                            await msg.answer(piece)
-                            full += (("\n" if full else "") + piece)
                     if buf.strip():
                         await msg.answer(buf.strip())
                         full += (("\n" if full else "") + buf.strip())
@@ -320,6 +315,7 @@ async def chatting_text(msg: Message):
                                 # ответ в live завершён — теперь стартуем таймер «10 минут тишины»
 
                     schedule_silence_check(msg.from_user.id, chat_id, delay_sec=600)
+
         else:
             # RP: один ответ
             r = await chat_turn(msg.from_user.id, chat_id, msg.text)
