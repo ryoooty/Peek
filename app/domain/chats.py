@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import AsyncGenerator, Dict, List, Tuple
 
@@ -158,9 +159,9 @@ async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
 
     await _maybe_compress_history(user_id, chat_id, model)
 
-    messages = (
-        await _collect_context(chat_id, user_id=user_id, model=model)
-    ) + [dict(role="user", content=text)]
+    messages = await _collect_context(chat_id, user_id=user_id, model=model)
+    messages += [dict(role="user", content=text)]
+
 
 
     r = await provider_chat(
@@ -205,9 +206,10 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[D
 
     await _maybe_compress_history(user_id, chat_id, model)
 
-    messages = (
-        await _collect_context(chat_id, user_id=user_id, model=model)
-    ) + [dict(role="user", content=text)]
+    messages = await _collect_context(chat_id, user_id=user_id, model=model)
+    messages += [dict(role="user", content=text)]
+
+
 
 
     async for ev in provider_stream(
