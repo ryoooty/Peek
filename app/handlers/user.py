@@ -50,7 +50,7 @@ async def start_deeplink(msg: Message, command: CommandObject | None = None):
         return
     u = storage.get_user(msg.from_user.id) or {}
     if not u.get("tz_offset_min"):
-        await msg.answer("Выберите ваш часовой пояс:", reply_markup=tz_keyboard())
+        await msg.answer("Выберите ваш часовой пояс:", reply_markup=tz_keyboard("tz"))
         return
     payload = (command.args or "").strip() if command else ""
     if payload.startswith("char_"):
@@ -72,7 +72,7 @@ async def start_plain(msg: Message):
         return
     u = storage.get_user(msg.from_user.id) or {}
     if not u.get("tz_offset_min"):
-        await msg.answer("Выберите ваш часовой пояс:", reply_markup=tz_keyboard())
+        await msg.answer("Выберите ваш часовой пояс:", reply_markup=tz_keyboard("tz"))
         return
     await msg.answer("Здравствуйте!", reply_markup=main_menu_kb(msg.from_user.id))
 
