@@ -201,6 +201,7 @@ def _migrate() -> None:
 
 
 # ------------- Users -------------
+
 def ensure_user(
     user_id: int, username: Optional[str] = None, *, default_tz_min: int = 180
 ) -> None:
@@ -213,6 +214,7 @@ def ensure_user(
         "INSERT INTO users(tg_id, username, tz_offset_min) VALUES (?,?,?)",
         (user_id, username, default_tz_min),
     )
+
 
 
 def get_user(user_id: int) -> Dict[str, Any] | None:
