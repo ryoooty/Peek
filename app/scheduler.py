@@ -91,12 +91,11 @@ def schedule_silence_check(user_id: int, chat_id: int, delay_sec: int = 600) -> 
     jid = f"silence:{user_id}:{int(run_at.timestamp())}"
     _add_job(jid, "date", run_date=run_at, func=_on_silence, args=(user_id, chat_id))
 
-
 def rebuild_user_jobs(user_id: int) -> None:
-    """Пересобрать суточный план Live для указанного пользователя.
+    """Пересобрать или очистить суточный план Live для пользователя.
 
     Удаляет все существующие джобы пользователя (nudge и silence) и,
-    если режим Live включён, создаёт новый дневной план.
+    при активном режиме Live — создаёт новый дневной план.
     """
     if not _scheduler:
         return
@@ -106,7 +105,9 @@ def rebuild_user_jobs(user_id: int) -> None:
         for j in list(_scheduler.get_jobs()):  # type: ignore
             if not j.id:
                 continue
-            if j.id.startswith(f"nudge:{user_id}:") or j.id.startswith(f"silence:{user_id}:"):
+            if j.id.startswith(f"nudge:{user_id}:") or j.id.startswith(
+                f"silence:{user_id}:"
+            ):
                 try:
                     _scheduler.remove_job(j.id)
                 except Exception:
@@ -115,39 +116,10 @@ def rebuild_user_jobs(user_id: int) -> None:
         pass
     _user_jobs.pop(user_id, None)
 
-    # если Live включён — пересоздать план
+    # пересоздать план, только если Live включён
     u = storage.get_user(user_id) or {}
     if int(u.get("proactive_enabled") or 0) == 1:
         _plan_daily(user_id)
-
-
-def rebuild_user_jobs(user_id: int) -> None:
-    """
-    Очистить и заново сгенерировать проактивные джобы для одного пользователя.
-    """
-    if not _scheduler:
-        return
-
-    # Снести все существующие джобы пользователя
-    for jid in _user_jobs.pop(user_id, []):
-        try:
-            _scheduler.remove_job(jid)  # type: ignore
-        except Exception:
-            pass
-
-    # Удалить незапланированные проверки тишины
-    try:
-        for j in list(_scheduler.get_jobs()):  # type: ignore
-            if j.id and j.id.startswith(f"silence:{user_id}:"):
-                try:
-                    _scheduler.remove_job(j.id)
-                except Exception:
-                    pass
-    except Exception:
-        pass
-
-    # Создать новый суточный план
-    _plan_daily(user_id)
 
 
 # ---------------- Internal helpers/jobs ----------------
