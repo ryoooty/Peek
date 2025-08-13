@@ -88,7 +88,11 @@ def _billable_tokens(model: str, usage_in: int, usage_out: int) -> int:
     t = settings.model_tariffs.get(model) or settings.model_tariffs.get(settings.default_model)
     if not t:
         return usage_in + usage_out
-    units = (usage_in * t.input_per_1k + usage_out * t.output_per_1k) / 1000.0
+    units = (
+        usage_in * t.input_per_1k
+        + usage_out * t.output_per_1k
+        + (usage_in + usage_out) * t.cache_per_1k
+    ) / 1000.0
     return max(1, int(math.ceil(units)))
 
 
@@ -137,6 +141,7 @@ async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
     messages = await _collect_context(chat_id, user_id=user_id, model=model)
     messages.append(dict(role="user", content=text))
 
+
     r = await provider_chat(
         model=model,
         messages=messages,
@@ -184,6 +189,7 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[D
         messages=messages,
         temperature=0.7,
         max_tokens=toks_limit,
+
         timeout_s=settings.limits.request_timeout_seconds,
     ):
         if ev.get("type") == "delta":
@@ -200,6 +206,7 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[D
                 "usage_in": str(usage_in),
                 "usage_out": str(usage_out),
                 "billed": str(billed),
+
                 "deficit": str(deficit),
                 "cost_in": f"{cost_in}",
                 "cost_out": f"{cost_out}",

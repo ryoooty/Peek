@@ -1,4 +1,5 @@
 
+
 from __future__ import annotations
 
 
@@ -40,4 +41,5 @@ def _balance_text(user_id: int) -> str:
 async def cb_open_balance(call: CallbackQuery):
 
     await call.answer()
+
 
