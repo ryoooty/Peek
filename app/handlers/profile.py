@@ -1,6 +1,7 @@
 # app/profile.py
 from __future__ import annotations
 
+
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
@@ -9,6 +10,8 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from app import storage
 from app.config import settings
 from app.scheduler import rebuild_user_jobs
+
+
 
 router = Router(name="profile")
 
@@ -24,13 +27,15 @@ def _profile_text(u: dict) -> str:
     live_on = bool(u.get("proactive_enabled") or 0)
     per_day = int(u.get("pro_per_day") or 2)
     gap_min = int(u.get("pro_min_gap_min") or 10)
+    max_delay = int(u.get("pro_max_delay_min") or 720)
     return (
         "<b>Профиль</b>\n"
         f"Подписка: <b>{sub}</b>\n"
         f"Модель: <b>{model}</b>\n"
         f"Режим Live: {'🟢 Вкл' if live_on else '⚪ Выкл'}\n"
         f"Нуджей в сутки: <b>{per_day}</b>\n"
-        f"Мин. интервал: <b>{gap_min} мин</b>\n\n"
+        f"Мин. интервал: <b>{gap_min} мин</b>\n"
+        f"Макс. интервал: <b>{max_delay} мин</b>\n\n"
         f"Всего сообщений: <b>{totals['user_msgs'] + totals['ai_msgs']}</b>\n"
         f"Всего чатов: <b>{chats_total}</b>\n"
         f"Топ персонаж: <b>{top_line}</b>\n"
@@ -74,18 +79,12 @@ async def cb_model(call: CallbackQuery):
 
 @router.callback_query(F.data == "prof:balance")
 async def cb_balance(call: CallbackQuery):
-    u = storage.get_user(call.from_user.id) or {}
-    text = (
-        "Баланс:\n"
-        f"Токи (free): <b>{u.get('free_toki') or 0}</b>\n"
-        f"Токены (paid): <b>{u.get('paid_tokens') or 0}</b>\n\n"
-        "Пополнение — через /pay (после подтверждения токены будут зачислены)."
-    )
     kb = InlineKeyboardBuilder()
     kb.button(text="⬅ Назад", callback_data="prof:back")
     kb.adjust(1)
-    await call.message.edit_text(text, reply_markup=kb.as_markup())
+    await call.message.edit_text(_balance_text(call.from_user.id), reply_markup=kb.as_markup())
     await call.answer()
+
 
 
 @router.callback_query(F.data == "prof:sub")
@@ -150,6 +149,7 @@ async def cb_set_live(call: CallbackQuery):
     kb.button(text=f"В день: {int(u.get('pro_per_day') or 2)}", callback_data="set:live:per")
     kb.button(text=f"Окно: {u.get('pro_window_local') or '09:00-21:00'}", callback_data="set:live:win")
     kb.button(text=f"Пауза: {int(u.get('pro_min_gap_min') or 10)} мин", callback_data="set:live:gap")
+    kb.button(text=f"Макс: {int(u.get('pro_max_delay_min') or 720)} мин", callback_data="set:live:max")
     kb.button(text="⬅ Назад", callback_data="prof:settings")
     kb.adjust(1)
     await call.message.edit_text(
@@ -210,6 +210,8 @@ async def cb_set_live_gap(call: CallbackQuery):
     u = storage.get_user(call.from_user.id) or {}
     val = int(u.get("pro_min_gap_min") or 10)
     cycle = [5, 10, 15, 30, 60, 120]
+
+    
     try:
         nxt = cycle[(cycle.index(val) + 1) % len(cycle)]
     except ValueError:
@@ -217,6 +219,8 @@ async def cb_set_live_gap(call: CallbackQuery):
     storage.set_user_field(call.from_user.id, "pro_min_gap_min", nxt)
     rebuild_user_jobs(call.from_user.id)
     await cb_set_live(call)
+
+    
 
 
 # ---- Другие настройки (оставлены) ----
@@ -239,11 +243,25 @@ async def cb_set_compress(call: CallbackQuery):
 
 @router.callback_query(F.data == "set:tz")
 async def cb_set_tz(call: CallbackQuery):
-    kb = InlineKeyboardBuilder()
-    kb.button(text="⬅ Назад", callback_data="prof:settings")
-    kb.adjust(1)
     await call.message.edit_text(
-        "Выбор часового пояса доступен на онбординге. Временно используйте настройку окна Live.",
-        reply_markup=kb.as_markup(),
+        "Выберите часовой пояс:", reply_markup=tz_keyboard("tzprof")
     )
     await call.answer()
+
+
+@router.callback_query(F.data.startswith("tzprof:"))
+async def cb_tz_prof(call: CallbackQuery):
+    try:
+        offset = int(call.data.split(":", 1)[1])
+    except Exception:
+        await call.answer("Некорректное значение", show_alert=True)
+        return
+    storage.set_user_field(call.from_user.id, "tz_offset_min", offset)
+    u = storage.get_user(call.from_user.id) or {}
+    await call.message.edit_text(_profile_text(u), reply_markup=_profile_kb(u))
+    await call.answer("Часовой пояс обновлён")
+
+
+@router.message(Command("tz"))
+async def cmd_tz(msg: Message):
+    await msg.answer("Выберите часовой пояс:", reply_markup=tz_keyboard("tzprof"))
