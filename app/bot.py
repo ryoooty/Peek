@@ -60,7 +60,6 @@ async def main():
     # Middlewares (внешние)
     dp.update.outer_middleware(MaintenanceMiddleware())
     dp.update.outer_middleware(SubscriptionGateMiddleware())
-    dp.update.outer_middleware(MaintenanceMiddleware())
 
     # Подключаем роутеры. ВАЖНО: «chats» — ПОСЛЕДНИЙ, чтобы не перехватывать slash-команды.
     dp.include_router(admin_handlers.router)
