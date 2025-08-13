@@ -222,15 +222,37 @@ def touch_activity(user_id: int) -> None:
 
 
 # ------------- Characters -------------
-def ensure_character(name: str, *, fandom: str | None = None, info_short: str | None = None) -> int:
+def ensure_character(
+    name: str,
+    *,
+    fandom: str | None = None,
+    info_short: str | None = None,
+    photo_id: str | None = None,
+    photo_path: str | None = None,
+) -> int:
     r = _q("SELECT id FROM characters WHERE name=?", (name,)).fetchone()
     if r:
+        fields = []
+        params: list[Any] = []
         if info_short is not None:
-            _exec("UPDATE characters SET info_short=? WHERE id=?", (info_short, r["id"]))
+            fields.append("info_short=?")
+            params.append(info_short)
+        if fandom is not None:
+            fields.append("fandom=?")
+            params.append(fandom)
+        if photo_id is not None:
+            fields.append("photo_id=?")
+            params.append(photo_id)
+        if photo_path is not None:
+            fields.append("photo_path=?")
+            params.append(photo_path)
+        if fields:
+            params.append(r["id"])
+            _exec(f"UPDATE characters SET {', '.join(fields)} WHERE id=?", tuple(params))
         return int(r["id"])
     cur = _exec(
-        "INSERT INTO characters(name, fandom, info_short) VALUES (?,?,?)",
-        (name, fandom, info_short),
+        "INSERT INTO characters(name, fandom, info_short, photo_id, photo_path) VALUES (?,?,?,?,?)",
+        (name, fandom, info_short, photo_id, photo_path),
     )
     return int(cur.lastrowid)
 
@@ -284,6 +306,10 @@ def set_character_prompts(
 
 def set_character_photo_path(char_id: int, file_path: str) -> None:
     _exec("UPDATE characters SET photo_path=? WHERE id=?", (file_path, char_id))
+
+
+def set_character_photo(char_id: int, file_id: str | None) -> None:
+    _exec("UPDATE characters SET photo_id=? WHERE id=?", (file_id, char_id))
 
 def toggle_fav_char(user_id: int, char_id: int, *, allow_max: int | None = None) -> bool:
     r = _q(
