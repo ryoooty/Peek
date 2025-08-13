@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 from aiogram import Router, F
 from aiogram.filters import Command
@@ -24,37 +23,20 @@ def _balance_text(user_id: int) -> str:
         "Доступно: /promo CODE — активировать промокод\n"
         "Пополнить: /pay — создать заявку (временный режим)"
     )
-# app/handlers/balance.py
-from aiogram import Router, F
-from aiogram.filters import Command
-from aiogram.types import Message
-from app import storage
 
-router = Router(name="balance")
 
-def _balance_text(u: dict) -> str:
-    return (
-        "Баланс:\n"
-        f"Токи (free): <b>{u.get('free_toki') or 0}</b>\n"
-        f"Токены (paid): <b>{u.get('paid_tokens') or 0}</b>\n\n"
-        "Пополнение — через /pay (после подтверждения токены будут зачислены)."
-    )
+async def _show_balance(message: Message, user_id: int, username: str | None = None):
+    storage.ensure_user(user_id, username)
+    await message.answer(_balance_text(user_id))
+
 
 @router.message(Command("balance"))
+@router.message(F.text == BTN_BALANCE)
 async def cmd_balance(msg: Message):
-    storage.ensure_user(msg.from_user.id, msg.from_user.username or None)
-    u = storage.get_user(msg.from_user.id) or {}
-    await msg.answer(_balance_text(u))  # <-- НОВОЕ сообщение
-
-# reply-кнопка "💰 Баланс" из главного меню
-@router.message(F.text == "💰 Баланс")
-async def btn_balance(msg: Message):
-    await cmd_balance(msg)
+    await _show_balance(msg, msg.from_user.id, msg.from_user.username or None)
 
 
-
-# Если где-то остались инлайн‑кнопки, ведущие к «балансу», — отвечаем НОВЫМ сообщением.
 @router.callback_query(F.data == "open_balance")
 async def cb_open_balance(call: CallbackQuery):
-    await call.message.answer(_balance_text(call.from_user.id))
+    await _show_balance(call.message, call.from_user.id, call.from_user.username or None)
     await call.answer()
