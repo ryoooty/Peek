@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
+import math
 from typing import AsyncGenerator, Dict, List, Tuple
+
 
 import math
 
@@ -181,6 +182,7 @@ async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
         model, usage_in, usage_out
     )
     return ChatReply(
+
         text=out_text,
         usage_in=usage_in,
         usage_out=usage_out,
@@ -231,6 +233,7 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[D
                 model, usage_in, usage_out
             )
             yield {
+
                 "kind": "final",
                 "usage_in": str(usage_in),
                 "usage_out": str(usage_out),

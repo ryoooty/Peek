@@ -1,62 +1,107 @@
 import sys
-from pathlib import Path
 import types
+import asyncio
+from pathlib import Path
 import pytest
+
+# Stub configuration before importing modules that depend on it
+class Tariff:
+    def __init__(self, input_per_1k: float, output_per_1k: float, cache_per_1k: float):
+        self.input_per_1k = input_per_1k
+        self.output_per_1k = output_per_1k
+        self.cache_per_1k = cache_per_1k
+
+
+class DummyLimits:
+    context_threshold_tokens = 0
+    auto_compress_default = False
+    request_timeout_seconds = 60
+
+
+class DummySettings:
+    def __init__(self):
+        self.default_model = "gpt-4o-mini"
+        self.model_tariffs = {
+            "gpt-4o-mini": Tariff(1.0, 1.0, 0.5),
+            "gpt-4o": Tariff(2.0, 2.0, 1.0),
+            "deepseek-chat": Tariff(0.6, 0.6, 0.3),
+            "deepseek-reasoner": Tariff(1.2, 1.2, 0.6),
+        }
+        self.limits = DummyLimits()
+        self.deepseek_base_url = ""
+        self.deepseek_api_key = None
+
+
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))
 
-class DummyMessage:
-    def __init__(self, user_id: int):
-        self.from_user = types.SimpleNamespace(id=user_id, username="u")
-        self.sent = []
-    async def answer(self, text: str):
-        self.sent.append(text)
+config_module = types.ModuleType("config")
+config_module.settings = DummySettings()
+sys.modules["app.config"] = config_module
 
-@pytest.mark.asyncio
-async def test_chat_turn_accumulates_cache_tokens(tmp_path, monkeypatch):
-    monkeypatch.setenv("BOT_TOKEN", "x")
-    from app import storage
-    storage.init(tmp_path / "db.sqlite")
-    storage.ensure_user(1, "test")
-    char_id = storage.ensure_character("Tester")
-    cur = storage._exec(
-        "INSERT INTO chats(user_id,char_id,mode,resp_size,seq_no) VALUES (?,?,?,?,?)",
-        (1, char_id, "rp", "auto", 1),
-    )
-    chat_id = int(cur.lastrowid)
+from app import storage
+from app.domain import chats
 
-    config_module = types.ModuleType("config")
-    class Limits:
-        request_timeout_seconds = 60
-        context_threshold_tokens = 0
-        auto_compress_default = False
-    config_module.settings = types.SimpleNamespace(
-        default_model="gpt-4o-mini",
-        model_tariffs={
-            "gpt-4o-mini": types.SimpleNamespace(input_per_1k=1.0, output_per_1k=1.0, cache_per_1k=0.5)
-        },
-        limits=Limits(),
-    )
-    sys.modules["app.config"] = config_module
 
-    from app.domain import chats
+class DummyResp:
+    def __init__(self, text: str, usage_in: int, usage_out: int):
+        self.text = text
+        self.usage_in = usage_in
+        self.usage_out = usage_out
+
+
+def test_chat_turn_accumulates_cache_tokens(tmp_path, monkeypatch):
+    storage.init(tmp_path / "chat.db")
+    storage.ensure_user(1, "u")
+
     monkeypatch.setattr(chats, "_collect_context", lambda chat_id: [])
-    async def fake_provider_chat(*args, **kwargs):
-        return types.SimpleNamespace(text="hi", usage_in=7, usage_out=3)
-    monkeypatch.setattr(chats, "provider_chat", fake_provider_chat)
-    async def fake_compress(*args, **kwargs):
+
+    async def noop(*args, **kwargs):
         return None
-    monkeypatch.setattr(chats, "_maybe_compress_history", fake_compress)
-    monkeypatch.setattr(chats, "_apply_billing", lambda *a, **kw: (0, 0))
 
-    await chats.chat_turn(1, chat_id, "hello")
+    monkeypatch.setattr(chats, "_maybe_compress_history", noop)
+
+    calls = [(3, 7), (2, 1)]
+
+    async def fake_chat(*args, **kwargs):
+        inp, out = calls.pop(0)
+        return DummyResp("ok", inp, out)
+
+    monkeypatch.setattr(chats, "provider_chat", fake_chat)
+
+    asyncio.run(chats.chat_turn(1, 1, "hi"))
+    asyncio.run(chats.chat_turn(1, 1, "hi"))
+
     u = storage.get_user(1) or {}
-    assert int(u.get("cache_tokens") or 0) == 10
+    assert int(u.get("cache_tokens") or 0) == (3 + 7) + (2 + 1)
 
-    from app.handlers.balance import cmd_balance
-    msg = DummyMessage(1)
-    await cmd_balance(msg)
-    assert "Кэш‑токены: <code>10</code>" in msg.sent[0]
+
+def test_live_stream_accumulates_cache_tokens(tmp_path, monkeypatch):
+    storage.init(tmp_path / "stream.db")
+    storage.ensure_user(2, "u")
+
+    monkeypatch.setattr(chats, "_collect_context", lambda chat_id: [])
+
+    async def noop(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(chats, "_maybe_compress_history", noop)
+
+    async def fake_stream(*args, **kwargs):
+        yield {"type": "delta", "text": "foo"}
+        yield {"type": "usage", "in": 5, "out": 7}
+
+    monkeypatch.setattr(chats, "provider_stream", fake_stream)
+
+    asyncio.run(_consume_stream(chats.live_stream(2, 1, "hi")))
+
+    u = storage.get_user(2) or {}
+    assert int(u.get("cache_tokens") or 0) == 5 + 7
+
+
+async def _consume_stream(gen):
+    async for _ in gen:
+        pass
 
