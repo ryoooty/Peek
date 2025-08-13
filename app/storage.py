@@ -73,6 +73,8 @@ def _migrate() -> None:
         proactive_enabled    INTEGER DEFAULT 1,
         pro_per_day          INTEGER DEFAULT 2,      -- дефолт: 2 раза/сутки
         pro_min_gap_min      INTEGER DEFAULT 10,     -- дефолт: 10 минут
+        pro_min_delay_min    INTEGER DEFAULT 60,     -- нижняя граница случайного интервала
+        pro_max_delay_min    INTEGER DEFAULT 720,    -- верхняя граница случайного интервала
         pro_free_used        INTEGER DEFAULT 0,
         last_proactive_at    DATETIME,
         last_activity_at     DATETIME,
@@ -80,11 +82,13 @@ def _migrate() -> None:
     )"""
     )
 
+
     if not _has_col("messages", "usage_cost_rub"):
         _exec("ALTER TABLE messages ADD COLUMN usage_cost_rub REAL")
 
     if not _has_col("users", "pro_free_used"):
         _exec("ALTER TABLE users ADD COLUMN pro_free_used INTEGER DEFAULT 0")
+
 
     # characters
     # >>> storage.py — в _migrate(), блок characters:
