@@ -71,14 +71,3 @@ async def to_chats(msg: Message):
 async def to_profile(msg: Message):
     from app.handlers.profile import show_profile
     await show_profile(msg)
-
-
-@router.message(F.text == "💰 Баланс")
-async def to_balance(msg: Message):
-    from app.handlers.profile import cb_balance
-
-    class FakeCall:
-        from_user = msg.from_user
-        message = msg
-
-    await cb_balance(FakeCall())  # переиспользуем коллбек
