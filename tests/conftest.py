@@ -66,6 +66,7 @@ aiogram.F = _F()
 class _BaseMiddleware:
     pass
 aiogram.BaseMiddleware = _BaseMiddleware
+aiogram.Bot = _Dummy
 
 filters = types.ModuleType("aiogram.filters")
 filters.Command = _Dummy

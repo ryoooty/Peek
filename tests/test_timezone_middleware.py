@@ -8,7 +8,7 @@ storage_stub.get_user = lambda user_id: {}
 sys.modules["app.storage"] = storage_stub
 
 tz_stub = types.ModuleType("app.utils.tz")
-tz_stub.tz_keyboard = lambda: "KB"
+tz_stub.tz_keyboard = lambda prefix: "KB"
 sys.modules["app.utils.tz"] = tz_stub
 
 from app.middlewares.timezone import TimezoneMiddleware
