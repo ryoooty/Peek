@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -8,8 +9,12 @@ from typing import Any, Dict, List, Optional, Tuple
 sqlite3.register_adapter(bool, int)
 sqlite3.register_converter("BOOLEAN", lambda v: bool(int(v)))
 
+from app.config import settings
+
+
 _conn: sqlite3.Connection | None = None
 _conn_path: Path | None = None
+_stats_cache: Dict[str, Tuple[float, Any]] = {}
 
 
 # ------------- Core -------------
@@ -38,6 +43,21 @@ def _q(sql: str, params: Tuple | Dict | None = None) -> sqlite3.Cursor:
     return _conn.execute(sql, params or ())
 
 
+# --- Simple cache for heavy stat queries ---
+def _cache_get(key: str, ttl: int) -> Any | None:
+    data = _stats_cache.get(key)
+    if not data:
+        return None
+    ts, value = data
+    if time.time() - ts > ttl:
+        return None
+    return value
+
+
+def _cache_set(key: str, value: Any) -> None:
+    _stats_cache[key] = (time.time(), value)
+
+
 # ------------- Schema -------------
 def _has_col(table: str, col: str) -> bool:
     assert _conn is not None
@@ -63,6 +83,7 @@ def _migrate() -> None:
         free_toki           INTEGER DEFAULT 0,    -- бесплатные (ночной бонус)
         paid_tokens         INTEGER DEFAULT 0,    -- платные токены
         cache_tokens        INTEGER DEFAULT 0,    -- накопленные «кэш-токены» (повторные отправки)
+        last_bonus_date     TEXT,
 
         tz_offset_min       INTEGER,
         default_chat_mode   TEXT DEFAULT 'rp',
@@ -73,21 +94,28 @@ def _migrate() -> None:
         proactive_enabled    INTEGER DEFAULT 1,
         pro_per_day          INTEGER DEFAULT 2,      -- дефолт: 2 раза/сутки
         pro_min_gap_min      INTEGER DEFAULT 10,     -- дефолт: 10 минут
+        pro_min_delay_min    INTEGER DEFAULT 60,     -- мин. задержка между нуджами
+        pro_max_delay_min    INTEGER DEFAULT 240,    -- макс. задержка между нуджами
         pro_free_used        INTEGER DEFAULT 0,
         last_proactive_at    DATETIME,
         last_activity_at     DATETIME,
         is_chatting          INTEGER DEFAULT 0
+
     )"""
     )
     if not _has_col("users", "pro_free_used"):
         _exec("ALTER TABLE users ADD COLUMN pro_free_used INTEGER DEFAULT 0")
+    if not _has_col("users", "last_bonus_date"):
+        _exec("ALTER TABLE users ADD COLUMN last_bonus_date TEXT")
+
 
     # characters
-# >>> storage.py — в _migrate(), блок characters:
+    # >>> storage.py — в _migrate(), блок characters:
     _exec(
         """
     CREATE TABLE IF NOT EXISTS characters (
         id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        slug         TEXT UNIQUE,
         name         TEXT NOT NULL,
         fandom       TEXT,
         short_prompt TEXT,
@@ -99,11 +127,13 @@ def _migrate() -> None:
         created_at   DATETIME DEFAULT CURRENT_TIMESTAMP
     )"""
     )
+    if not _has_col("characters", "slug"):
+        _exec("ALTER TABLE characters ADD COLUMN slug TEXT UNIQUE")
     if not _has_col("characters", "photo_id"):
         _exec("ALTER TABLE characters ADD COLUMN photo_id TEXT")
     if not _has_col("characters", "info_short"):
         _exec("ALTER TABLE characters ADD COLUMN info_short TEXT")
-# +++
+    # +++
     if not _has_col("characters", "photo_path"):
         _exec("ALTER TABLE characters ADD COLUMN photo_path TEXT")
 
@@ -149,6 +179,7 @@ def _migrate() -> None:
         content     TEXT NOT NULL,
         usage_in    INTEGER,
         usage_out   INTEGER,
+        usage_cost_rub REAL,
         created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
     )"""
     )
@@ -166,6 +197,7 @@ def _migrate() -> None:
     # proactive log (для нуджей)
     _exec(
         """
+
     CREATE TABLE IF NOT EXISTS proactive_log (
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id     INTEGER NOT NULL,
@@ -176,7 +208,19 @@ def _migrate() -> None:
     )"""
     )
 
+    _exec(
+        """
+    CREATE TABLE IF NOT EXISTS token_log (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id     INTEGER NOT NULL,
+        amount      INTEGER NOT NULL,
+        meta        TEXT,
+        created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+    )"""
+    )
+
     # payments (каркас)
+
     _exec(
         """
     CREATE TABLE IF NOT EXISTS topups (
@@ -204,17 +248,32 @@ def _migrate() -> None:
     )
 
 
+    _exec(
+        """
+    CREATE TABLE IF NOT EXISTS toki_log (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id     INTEGER NOT NULL,
+        amount      INTEGER NOT NULL,
+        meta        TEXT,
+        created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+    )"""
+    )
+
+
 # ------------- Users -------------
-def ensure_user(user_id: int, username: Optional[str] = None, *, default_tz_min: int = 180) -> None:
+
+def ensure_user(user_id: int, username: Optional[str] = None) -> None:
     row = _q("SELECT tg_id FROM users WHERE tg_id=?", (user_id,)).fetchone()
     if row:
         if username:
             _exec("UPDATE users SET username=? WHERE tg_id=?", (username, user_id))
         return
     _exec(
-        "INSERT INTO users(tg_id, username, tz_offset_min) VALUES (?,?,?)",
-        (user_id, username, default_tz_min),
+        "INSERT INTO users(tg_id, username) VALUES (?,?)",
+        (user_id, username),
     )
+
+
 
 
 def get_user(user_id: int) -> Dict[str, Any] | None:
@@ -233,18 +292,43 @@ def touch_activity(user_id: int) -> None:
     )
 
 
+    
 # ------------- Characters -------------
-def ensure_character(name: str, *, fandom: str | None = None, info_short: str | None = None) -> int:
+def ensure_character(
+    name: str,
+    *,
+    fandom: str | None = None,
+    info_short: str | None = None,
+    photo_id: str | None = None,
+    photo_path: str | None = None,
+) -> int:
     r = _q("SELECT id FROM characters WHERE name=?", (name,)).fetchone()
     if r:
+        fields = []
+        params: list[Any] = []
         if info_short is not None:
-            _exec("UPDATE characters SET info_short=? WHERE id=?", (info_short, r["id"]))
+            fields.append("info_short=?")
+            params.append(info_short)
+        if fandom is not None:
+            fields.append("fandom=?")
+            params.append(fandom)
+        if photo_id is not None:
+            fields.append("photo_id=?")
+            params.append(photo_id)
+        if photo_path is not None:
+            fields.append("photo_path=?")
+            params.append(photo_path)
+        if fields:
+            params.append(r["id"])
+            _exec(f"UPDATE characters SET {', '.join(fields)} WHERE id=?", tuple(params))
         return int(r["id"])
     cur = _exec(
-        "INSERT INTO characters(name, fandom, info_short) VALUES (?,?,?)",
-        (name, fandom, info_short),
+        "INSERT INTO characters(name, fandom, info_short, photo_id, photo_path) VALUES (?,?,?,?,?)",
+        (name, fandom, info_short, photo_id, photo_path),
     )
     return int(cur.lastrowid)
+
+  
 
 
 def get_character(char_id: int) -> Dict[str, Any] | None:
@@ -297,7 +381,19 @@ def set_character_prompts(
 def set_character_photo_path(char_id: int, file_path: str) -> None:
     _exec("UPDATE characters SET photo_path=? WHERE id=?", (file_path, char_id))
 
-def toggle_fav_char(user_id: int, char_id: int, *, allow_max: int | None = None) -> bool:
+
+def set_character_photo(char_id: int, file_id: str | None) -> None:
+    _exec("UPDATE characters SET photo_id=? WHERE id=?", (file_id, char_id))
+
+
+def set_character_photo(char_id: int, file_id: str | None) -> None:
+    """Store Telegram file ID for a character photo."""
+    _exec("UPDATE characters SET photo_id=? WHERE id=?", (file_id, char_id))
+
+
+def toggle_fav_char(
+    user_id: int, char_id: int, *, allow_max: int | None = None
+) -> bool:
     r = _q(
         "SELECT 1 FROM fav_chars WHERE user_id=? AND char_id=?",
         (user_id, char_id),
@@ -307,9 +403,9 @@ def toggle_fav_char(user_id: int, char_id: int, *, allow_max: int | None = None)
         return False
     if allow_max is not None:
         cnt = (
-            _q("SELECT COUNT(*) AS c FROM fav_chars WHERE user_id=?", (user_id,)).fetchone()[
-                "c"
-            ]
+            _q(
+                "SELECT COUNT(*) AS c FROM fav_chars WHERE user_id=?", (user_id,)
+            ).fetchone()["c"]
             or 0
         )
         if int(cnt) >= int(allow_max):
@@ -331,7 +427,11 @@ def is_fav_char(user_id: int, char_id: int) -> bool:
 
 # ------------- Chats & Messages -------------
 def create_chat(
-    user_id: int, char_id: int, *, mode: Optional[str] = None, resp_size: Optional[str] = None
+    user_id: int,
+    char_id: int,
+    *,
+    mode: Optional[str] = None,
+    resp_size: Optional[str] = None,
 ) -> int:
     u = get_user(user_id) or {}
     mode = mode or u.get("default_chat_mode") or "rp"
@@ -342,7 +442,7 @@ def create_chat(
     ).fetchone()
     seq_no = int((r["c"] or 0) + 1)
     cur = _exec(
-        "INSERT INTO chats(user_id,char_id,mode,resp_size,seq_no) VALUES (?,?,?,?,?)",
+        "INSERT INTO chats(user_id,char_id,mode,resp_size,seq_no) VALUES (?,?,?,?,?,?)",
         (user_id, char_id, mode, resp_size, seq_no),
     )
     return int(cur.lastrowid)
@@ -361,9 +461,7 @@ def get_chat(chat_id: int) -> Dict[str, Any] | None:
     return dict(r) if r else None
 
 
-def list_user_chats(
-    user_id: int, *, page: int, page_size: int
-) -> List[Dict[str, Any]]:
+def list_user_chats(user_id: int, *, page: int, page_size: int) -> List[Dict[str, Any]]:
     offset = max(0, (page - 1) * page_size)
     rows = _q(
         """
@@ -435,13 +533,32 @@ def add_message(
     content: str,
     usage_in: int | None = None,
     usage_out: int | None = None,
+    usage_cost_rub: float | None = None,
 ) -> int:
     cur = _exec(
-        "INSERT INTO messages(chat_id,is_user,content,usage_in,usage_out) VALUES (?,?,?,?,?)",
-        (chat_id, 1 if is_user else 0, content, usage_in, usage_out),
+        "INSERT INTO messages(chat_id,is_user,content,usage_in,usage_out, usage_cost_rub) VALUES (?,?,?,?,?,?)",
+        (chat_id, 1 if is_user else 0, content, usage_in, usage_out, usage_cost_rub),
     )
     _exec("UPDATE chats SET updated_at=CURRENT_TIMESTAMP WHERE id=?", (chat_id,))
     return int(cur.lastrowid)
+
+
+def compress_history(
+    chat_id: int,
+    summary: str,
+    *,
+    usage_in: int | None = None,
+    usage_out: int | None = None,
+) -> None:
+    """Удаляет сообщения чата и сохраняет краткое содержание."""
+    _exec("DELETE FROM messages WHERE chat_id=?", (chat_id,))
+    add_message(
+        chat_id,
+        is_user=False,
+        content=summary,
+        usage_in=usage_in,
+        usage_out=usage_out,
+    )
 
 
 def list_messages(chat_id: int, *, limit: int | None = None) -> List[Dict[str, Any]]:
@@ -475,7 +592,7 @@ def last_message_ts(chat_id: int) -> Optional[datetime]:
 def export_chat_txt(chat_id: int) -> str:
     msgs = list_messages(chat_id)
     ch = get_chat(chat_id)
-    ai = (ch["char_name"] if ch else "AI")
+    ai = ch["char_name"] if ch else "AI"
     lines: List[str] = []
     for m in msgs:
         who = "User" if m["is_user"] else ai
@@ -530,11 +647,27 @@ def user_totals(user_id: int) -> Dict[str, Any]:
 
 
 # ------------- Billing (toki/tokens) -------------
+def _log_token(user_id: int, amount: int, meta: str) -> None:
+    _exec(
+        "INSERT INTO token_log(user_id, amount, meta) VALUES (?,?,?)",
+        (user_id, int(amount), meta),
+    )
+
+
+def list_token_log(user_id: int, limit: int = 10) -> List[Dict[str, Any]]:
+    rows = _q(
+        "SELECT amount, meta, created_at FROM token_log WHERE user_id=? ORDER BY id DESC LIMIT ?",
+        (user_id, int(limit)),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def add_toki(user_id: int, amount: int, meta: str = "bonus") -> None:
     _exec(
         "UPDATE users SET free_toki = free_toki + ? WHERE tg_id=?",
         (int(amount), user_id),
     )
+    _log_token(user_id, int(amount), meta)
 
 
 def add_paid_tokens(user_id: int, amount: int, meta: str = "topup") -> None:
@@ -542,6 +675,8 @@ def add_paid_tokens(user_id: int, amount: int, meta: str = "topup") -> None:
         "UPDATE users SET paid_tokens = paid_tokens + ? WHERE tg_id=?",
         (int(amount), user_id),
     )
+    _log_token(user_id, int(amount), meta)
+
 
 
 def add_cache_tokens(user_id: int, amount: int) -> None:
@@ -569,11 +704,13 @@ def spend_tokens(user_id: int, amount: int) -> Tuple[int, int, int]:
             "UPDATE users SET free_toki = free_toki - ? WHERE tg_id=?",
             (use_free, user_id),
         )
+        _log_token(user_id, -use_free, "spend_free")
     if use_paid:
         _exec(
             "UPDATE users SET paid_tokens = paid_tokens - ? WHERE tg_id=?",
             (use_paid, user_id),
         )
+        _log_token(user_id, -use_paid, "spend_paid")
     return use_free, use_paid, need  # need==deficit
 
 
@@ -581,6 +718,52 @@ def spend_tokens(user_id: int, amount: int) -> Tuple[int, int, int]:
 def nightly_bonus_toki(user_id: int, amount: int) -> None:
     today = datetime.utcnow().strftime("%Y-%m-%d")
     add_toki(user_id, amount, meta=f"nightly:{today}")
+
+
+def daily_bonus_free_users() -> List[int]:
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    amount = int(settings.nightly_toki_bonus.get("free") or 0)
+    rows = _q(
+        "SELECT tg_id FROM users WHERE subscription='free' AND (last_bonus_date IS NULL OR last_bonus_date<>?)",
+        (today,),
+    ).fetchall()
+    for r in rows:
+        uid = int(r["tg_id"])
+        add_toki(uid, amount, meta=f"daily:{today}")
+        _exec("UPDATE users SET last_bonus_date=? WHERE tg_id=?", (today, uid))
+    return [int(r["tg_id"]) for r in rows]
+
+
+def get_toki_log(user_id: int, limit: int = 10) -> List[Dict[str, Any]]:
+    rows = _q(
+        "SELECT amount, meta, created_at FROM toki_log WHERE user_id=? ORDER BY id DESC LIMIT ?",
+        (user_id, int(limit)),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def daily_bonus_free_users() -> int:
+    amount = int(settings.subs.nightly_toki_bonus.get("free", 0))
+    if amount <= 0:
+        return 0
+    rows = _q(
+        """
+        SELECT tg_id FROM users
+         WHERE subscription='free'
+           AND (last_daily_bonus_at IS NULL OR date(last_daily_bonus_at) < date('now','utc'))
+        """
+    ).fetchall()
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    count = 0
+    for r in rows:
+        uid = int(r["tg_id"])
+        add_toki(uid, amount, meta=f"daily:{today}")
+        _exec(
+            "UPDATE users SET last_daily_bonus_at=CURRENT_TIMESTAMP WHERE tg_id=?",
+            (uid,),
+        )
+        count += 1
+    return count
 
 
 # ------------- Proactive helpers -------------
@@ -596,12 +779,18 @@ def proactive_count_today(user_id: int) -> int:
     return int(r["c"] or 0)
 
 
-def log_proactive(user_id: int, chat_id: int, char_id: int, kind: str = "regular") -> None:
+
+def log_proactive(
+    user_id: int, chat_id: int, char_id: int, kind: str = "regular"
+) -> None:
     _exec(
         "INSERT INTO proactive_log(user_id, chat_id, char_id, kind) VALUES (?,?,?,?)",
         (user_id, chat_id, char_id, kind),
     )
-    _exec("UPDATE users SET last_proactive_at=CURRENT_TIMESTAMP WHERE tg_id=?", (user_id,))
+    _exec(
+        "UPDATE users SET last_proactive_at=CURRENT_TIMESTAMP WHERE tg_id=?", (user_id,)
+    )
+
 
 
 # ------------- Payments -------------
@@ -640,6 +829,7 @@ def approve_topup(topup_id: int, admin_id: int) -> bool:
     return True
 
 
+
 def decline_topup(topup_id: int, admin_id: int) -> bool:
     r = _q("SELECT id, status FROM topups WHERE id=?", (topup_id,)).fetchone()
     if not r or r["status"] != "pending":
@@ -649,13 +839,17 @@ def decline_topup(topup_id: int, admin_id: int) -> bool:
         (admin_id, topup_id),
     )
     return True
+
+
 # ----- Chatting flag -----
 def set_user_chatting(user_id: int, on: bool) -> None:
     _exec("UPDATE users SET is_chatting=? WHERE tg_id=?", (1 if on else 0, user_id))
 
+
 def is_user_chatting(user_id: int) -> bool:
     r = _q("SELECT is_chatting FROM users WHERE tg_id=?", (user_id,)).fetchone()
     return bool(r and int(r["is_chatting"] or 0))
+
 
 # ----- Proactive Plan -----
 def get_user_settings(user_id: int) -> tuple[int, int]:
@@ -664,12 +858,24 @@ def get_user_settings(user_id: int) -> tuple[int, int]:
     min_gap_sec = int(u.get("pro_min_gap_min") or 10) * 60
     return per_day, min_gap_sec
 
+
+def get_delay_range(user_id: int) -> tuple[int, int]:
+    """Возвращает (min_delay_sec, max_delay_sec) с дефолтами."""
+    u = get_user(user_id) or {}
+    min_delay_sec = int(u.get("pro_min_delay_min") or 60) * 60
+    max_delay_sec = int(u.get("pro_max_delay_min") or 240) * 60
+    if max_delay_sec < min_delay_sec:
+        max_delay_sec = min_delay_sec
+    return min_delay_sec, max_delay_sec
+
+
 def get_pending_plan(user_id: int) -> list[dict]:
     rows = _q(
         "SELECT * FROM proactive_plan WHERE user_id=? AND status='PENDING' ORDER BY fire_at",
         (user_id,),
     ).fetchall()
     return [dict(r) for r in rows]
+
 
 def insert_plan(user_id: int, chat_id: int, fire_at: int) -> int:
     cur = _exec(
@@ -678,8 +884,10 @@ def insert_plan(user_id: int, chat_id: int, fire_at: int) -> int:
     )
     return int(cur.lastrowid)
 
+
 def delete_future_plan(user_id: int) -> None:
     _exec("DELETE FROM proactive_plan WHERE user_id=? AND status='PENDING'", (user_id,))
+
 
 def get_due_plans(now_ts: int, limit: int = 100) -> list[dict]:
     rows = _q(
@@ -688,11 +896,18 @@ def get_due_plans(now_ts: int, limit: int = 100) -> list[dict]:
     ).fetchall()
     return [dict(r) for r in rows]
 
+
 def mark_plan_sent(plan_id: int, ts: int) -> None:
-    _exec("UPDATE proactive_plan SET status='SENT', sent_at=? WHERE id=?", (int(ts), int(plan_id)))
+    _exec(
+        "UPDATE proactive_plan SET status='SENT', sent_at=? WHERE id=?",
+        (int(ts), int(plan_id)),
+    )
+
 
 def skip_and_reschedule(plan_id: int, new_fire_at: int) -> None:
     _exec("UPDATE proactive_plan SET status='SKIPPED' WHERE id=?", (int(plan_id),))
-    row = _q("SELECT user_id, chat_id FROM proactive_plan WHERE id=?", (int(plan_id),)).fetchone()
+    row = _q(
+        "SELECT user_id, chat_id FROM proactive_plan WHERE id=?", (int(plan_id),)
+    ).fetchone()
     if row:
         insert_plan(int(row["user_id"]), int(row["chat_id"]), int(new_fire_at))
