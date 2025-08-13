@@ -265,6 +265,15 @@ def touch_activity(user_id: int) -> None:
     )
 
 
+def select_proactive_candidates() -> List[int]:
+    """Return user ids with proactive mode enabled."""
+    try:
+        rows = _q("SELECT tg_id FROM users WHERE proactive_enabled=1").fetchall()
+        return [int(r["tg_id"]) for r in rows]
+    except Exception:
+        return []
+
+
 # ------------- Characters -------------
 def ensure_character(
     name: str,
