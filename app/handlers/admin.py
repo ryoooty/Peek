@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -26,10 +27,12 @@ async def _require_admin(msg: Message) -> bool:
 MEDIA_DIR = Path(BASE_DIR) / "media" / "characters"
 MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 
+
 @router.message(Command("char_photo"))
 async def cmd_char_photo(msg: Message):
     if not await _require_admin(msg):
         return
+
     parts = (msg.text or "").split()
     if len(parts) < 2 and not (msg.caption or "").startswith("/char_photo"):
         return await msg.answer(
@@ -79,10 +82,14 @@ async def cmd_char_photo(msg: Message):
         except Exception as e:
             return await msg.answer(f"Не удалось скачать фото: <code>{e}</code>")
 
-    # сохраняем путь в БД
+          
+    # сохраняем путь и file_id в БД
     storage.set_character_photo_path(char_id, str(save_path.as_posix()))
-    # (опц.) можно сбросить старый photo_id, чтобы точно использовался путь:
-    # storage.set_character_photo(char_id, None)
+    storage.set_character_photo(char_id, file_id)
+
+    await msg.answer(
+        "Фото сохранено ✅\nПуть: <code>{}</code>".format(save_path.as_posix())
+    )
 
     await msg.answer("Фото сохранено ✅\nПуть: <code>{}</code>".format(save_path.as_posix()))
 
@@ -119,3 +126,4 @@ async def cmd_stats(msg: Message):
             lines.append(f"{uname}: {r['cnt']}")
 
     await msg.answer("\n".join(lines))
+
