@@ -6,6 +6,8 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from app.config import settings
+
 
 sqlite3.register_adapter(bool, int)
 sqlite3.register_converter("BOOLEAN", lambda v: bool(int(v)))
@@ -391,10 +393,6 @@ def set_character_prompts(
 
 def set_character_photo_path(char_id: int, file_path: str) -> None:
     _exec("UPDATE characters SET photo_path=? WHERE id=?", (file_path, char_id))
-
-
-def set_character_photo(char_id: int, file_id: str | None) -> None:
-    _exec("UPDATE characters SET photo_id=? WHERE id=?", (file_id, char_id))
 
 
 def set_character_photo(char_id: int, file_id: str | None) -> None:
@@ -842,30 +840,6 @@ def get_toki_log(user_id: int, limit: int = 10) -> List[Dict[str, Any]]:
         (user_id, int(limit)),
     ).fetchall()
     return [dict(r) for r in rows]
-
-
-def daily_bonus_free_users() -> int:
-    amount = int(settings.subs.nightly_toki_bonus.get("free", 0))
-    if amount <= 0:
-        return 0
-    rows = _q(
-        """
-        SELECT tg_id FROM users
-         WHERE subscription='free'
-           AND (last_daily_bonus_at IS NULL OR date(last_daily_bonus_at) < date('now','utc'))
-        """
-    ).fetchall()
-    today = datetime.utcnow().strftime("%Y-%m-%d")
-    count = 0
-    for r in rows:
-        uid = int(r["tg_id"])
-        add_toki(uid, amount, meta=f"daily:{today}")
-        _exec(
-            "UPDATE users SET last_daily_bonus_at=CURRENT_TIMESTAMP WHERE tg_id=?",
-            (uid,),
-        )
-        count += 1
-    return count
 
 
 # ------------- Proactive helpers -------------

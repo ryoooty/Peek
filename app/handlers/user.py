@@ -34,41 +34,6 @@ def main_menu_kb(user_id: int) -> ReplyKeyboardMarkup:
 
 
 async def _check_subscription(msg: Message) -> bool:
-    channel_id = settings.sub_channel_id
-    if not channel_id:
-        return True
-    try:
-        m = await msg.bot.get_chat_member(chat_id=channel_id, user_id=msg.from_user.id)
-        status = getattr(m, "status", "left")
-        if status in ("member", "administrator", "creator"):
-            return True
-    except Exception:
-        return True
-    url = None
-    if settings.sub_channel_username:
-        url = f"https://t.me/{settings.sub_channel_username.lstrip('@')}"
-    kb = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="📣 Открыть канал", url=url or "https://t.me")],
-            [InlineKeyboardButton(text="✅ Проверить подписку", callback_data="gate:check")],
-        ]
-    )
-    await msg.answer("Подпишитесь на канал, чтобы продолжить.", reply_markup=kb)
-    return False
-
-
-
-def _gate_kb() -> InlineKeyboardMarkup:
-    url = None
-    if settings.sub_channel_username:
-        url = f"https://t.me/{settings.sub_channel_username.lstrip('@')}"
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📣 Открыть канал", url=url or "https://t.me")],
-        [InlineKeyboardButton(text="✅ Проверить подписку", callback_data="gate:check")],
-    ])
-
-
-async def _check_subscription(msg: Message) -> bool:
     if not settings.sub_channel_id:
         return True
     try:

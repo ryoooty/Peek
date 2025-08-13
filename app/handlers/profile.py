@@ -14,6 +14,7 @@ from app.handlers.balance import _balance_text
 
 
 
+
 router = Router(name="profile")
 
 
@@ -202,8 +203,12 @@ async def cb_set_live_win(call: CallbackQuery):
     tz = int((u.get("tz_offset_min") or 180))
     def _to_utc(w: str) -> str:
         a, b = w.split("-")
-        parse = lambda s: int(s[:2]) * 60 + int(s[3:5])
-        fmt = lambda m: f"{(m // 60) % 24:02d}:{m % 60:02d}"
+        def parse(s: str) -> int:
+            return int(s[:2]) * 60 + int(s[3:5])
+
+        def fmt(m: int) -> str:
+            return f"{(m // 60) % 24:02d}:{m % 60:02d}"
+
         da, db = parse(a) - tz, parse(b) - tz
         return f"{fmt(da)}-{fmt(db)}"
     storage.set_user_field(call.from_user.id, "pro_window_utc", _to_utc(nxt))
