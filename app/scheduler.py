@@ -78,6 +78,35 @@ def schedule_silence_check(user_id: int, chat_id: int, delay_sec: int = 600) -> 
     _add_job(jid, "date", run_date=run_at, func=_on_silence, args=(user_id, chat_id))
 
 
+def rebuild_user_jobs(user_id: int) -> None:
+    """
+    Очистить и заново сгенерировать проактивные джобы для одного пользователя.
+    """
+    if not _scheduler:
+        return
+
+    # Снести все существующие джобы пользователя
+    for jid in _user_jobs.pop(user_id, []):
+        try:
+            _scheduler.remove_job(jid)  # type: ignore
+        except Exception:
+            pass
+
+    # Удалить незапланированные проверки тишины
+    try:
+        for j in list(_scheduler.get_jobs()):  # type: ignore
+            if j.id and j.id.startswith(f"silence:{user_id}:"):
+                try:
+                    _scheduler.remove_job(j.id)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    # Создать новый суточный план
+    _plan_daily(user_id)
+
+
 # ---------------- Internal helpers/jobs ----------------
 
 def _add_job(job_id: str, trigger: str, **kw) -> None:
