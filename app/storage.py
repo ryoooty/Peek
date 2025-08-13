@@ -73,6 +73,8 @@ def _migrate() -> None:
         proactive_enabled    INTEGER DEFAULT 1,
         pro_per_day          INTEGER DEFAULT 2,      -- дефолт: 2 раза/сутки
         pro_min_gap_min      INTEGER DEFAULT 10,     -- дефолт: 10 минут
+        pro_min_delay_min    INTEGER DEFAULT 60,     -- мин. задержка между нуджами
+        pro_max_delay_min    INTEGER DEFAULT 240,    -- макс. задержка между нуджами
         pro_free_used        INTEGER DEFAULT 0,
         last_proactive_at    DATETIME,
         last_activity_at     DATETIME,
@@ -81,6 +83,10 @@ def _migrate() -> None:
     )
     if not _has_col("users", "pro_free_used"):
         _exec("ALTER TABLE users ADD COLUMN pro_free_used INTEGER DEFAULT 0")
+    if not _has_col("users", "pro_min_delay_min"):
+        _exec("ALTER TABLE users ADD COLUMN pro_min_delay_min INTEGER DEFAULT 60")
+    if not _has_col("users", "pro_max_delay_min"):
+        _exec("ALTER TABLE users ADD COLUMN pro_max_delay_min INTEGER DEFAULT 240")
 
     # characters
 # >>> storage.py — в _migrate(), блок characters:
@@ -636,6 +642,16 @@ def get_user_settings(user_id: int) -> tuple[int, int]:
     per_day = int(u.get("pro_per_day") or 2)
     min_gap_sec = int(u.get("pro_min_gap_min") or 10) * 60
     return per_day, min_gap_sec
+
+
+def get_delay_range(user_id: int) -> tuple[int, int]:
+    """Возвращает (min_delay_sec, max_delay_sec) с дефолтами."""
+    u = get_user(user_id) or {}
+    min_delay_sec = int(u.get("pro_min_delay_min") or 60) * 60
+    max_delay_sec = int(u.get("pro_max_delay_min") or 240) * 60
+    if max_delay_sec < min_delay_sec:
+        max_delay_sec = min_delay_sec
+    return min_delay_sec, max_delay_sec
 
 def get_pending_plan(user_id: int) -> list[dict]:
     rows = _q(

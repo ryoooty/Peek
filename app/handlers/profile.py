@@ -23,13 +23,15 @@ def _profile_text(u: dict) -> str:
     live_on = bool(u.get("proactive_enabled") or 0)
     per_day = int(u.get("pro_per_day") or 2)
     gap_min = int(u.get("pro_min_gap_min") or 10)
+    max_delay = int(u.get("pro_max_delay_min") or 240)
     return (
         "<b>Профиль</b>\n"
         f"Подписка: <b>{sub}</b>\n"
         f"Модель: <b>{model}</b>\n"
         f"Режим Live: {'🟢 Вкл' if live_on else '⚪ Выкл'}\n"
         f"Нуджей в сутки: <b>{per_day}</b>\n"
-        f"Мин. интервал: <b>{gap_min} мин</b>\n\n"
+        f"Мин. интервал: <b>{gap_min} мин</b>\n"
+        f"Макс. интервал: <b>{max_delay} мин</b>\n\n"
         f"Всего сообщений: <b>{totals['user_msgs'] + totals['ai_msgs']}</b>\n"
         f"Всего чатов: <b>{chats_total}</b>\n"
         f"Топ персонаж: <b>{top_line}</b>\n"
@@ -149,6 +151,7 @@ async def cb_set_live(call: CallbackQuery):
     kb.button(text=f"В день: {int(u.get('pro_per_day') or 2)}", callback_data="set:live:per")
     kb.button(text=f"Окно: {u.get('pro_window_local') or '09:00-21:00'}", callback_data="set:live:win")
     kb.button(text=f"Пауза: {int(u.get('pro_min_gap_min') or 10)} мин", callback_data="set:live:gap")
+    kb.button(text=f"Макс. интервал: {int(u.get('pro_max_delay_min') or 240)} мин", callback_data="set:live:max")
     kb.button(text="⬅ Назад", callback_data="prof:settings")
     kb.adjust(1)
     await call.message.edit_text(
@@ -211,6 +214,19 @@ async def cb_set_live_gap(call: CallbackQuery):
     except ValueError:
         nxt = 10
     storage.set_user_field(call.from_user.id, "pro_min_gap_min", nxt)
+    await cb_set_live(call)
+
+
+@router.callback_query(F.data == "set:live:max")
+async def cb_set_live_max(call: CallbackQuery):
+    u = storage.get_user(call.from_user.id) or {}
+    val = int(u.get("pro_max_delay_min") or 240)
+    cycle = [60, 120, 180, 240, 360, 720]
+    try:
+        nxt = cycle[(cycle.index(val) + 1) % len(cycle)]
+    except ValueError:
+        nxt = 240
+    storage.set_user_field(call.from_user.id, "pro_max_delay_min", nxt)
     await cb_set_live(call)
 
 
