@@ -8,6 +8,7 @@ from typing import Optional, Dict, List
 from aiogram import Bot
 from app import storage
 from app.config import settings
+from app.runtime import set_scheduler
 
 # APScheduler — опционально (без SQLAlchemyJobStore, чтобы не требовать SQLAlchemy)
 try:
@@ -50,6 +51,7 @@ def init(bot: Bot) -> None:
     global _scheduler, _bot
     _bot = bot
 
+
     if AsyncIOScheduler is None:
         # APScheduler не установлен — тихо деградируем
         return
@@ -66,6 +68,7 @@ def init(bot: Bot) -> None:
     )
 
     # Ежеминутный тик на случай подвисших/забытых пользователей:
+
     # Если у юзера включён Live и нет будущих джоб — создадим суточный план.
     _add_job("proactive:tick", "interval", minutes=1, func=_tick_fill_plans)
 
