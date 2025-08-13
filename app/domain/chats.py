@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from typing import AsyncGenerator, Dict, List, Tuple
 
@@ -8,6 +7,8 @@ from app import storage
 from app.config import settings
 from app.character import get_system_prompt_for_chat
 from app.providers.deepseek_openai import chat as provider_chat, stream_chat as provider_stream
+from app.billing.pricing import calc_usage_cost_rub
+
 
 
 @dataclass
@@ -17,6 +18,10 @@ class ChatReply:
     usage_out: int = 0
     billed: int = 0
     deficit: int = 0
+    cost_in: float = 0.0
+    cost_out: float = 0.0
+    cost_cache: float = 0.0
+    cost_total: float = 0.0
 
 
 def _approx_tokens(text: str) -> int:
@@ -141,13 +146,22 @@ async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
     )
     out_text = _safe_trim(r.text, char_limit)
 
-    billed, deficit = _apply_billing(user_id, model, int(r.usage_in or 0), int(r.usage_out or 0))
+    usage_in = int(r.usage_in or 0)
+    usage_out = int(r.usage_out or 0)
+    billed, deficit = _apply_billing(user_id, model, usage_in, usage_out)
+    cost_in, cost_out, cost_cache, cost_total = calc_usage_cost_rub(
+        model, usage_in, usage_out
+    )
     return ChatReply(
         text=out_text,
-        usage_in=int(r.usage_in or 0),
-        usage_out=int(r.usage_out or 0),
+        usage_in=usage_in,
+        usage_out=usage_out,
         billed=billed,
         deficit=deficit,
+        cost_in=cost_in,
+        cost_out=cost_out,
+        cost_cache=cost_cache,
+        cost_total=cost_total,
     )
 
 
@@ -178,10 +192,17 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[D
             usage_in = int(ev.get("in") or 0)
             usage_out = int(ev.get("out") or 0)
             billed, deficit = _apply_billing(user_id, model, usage_in, usage_out)
+            cost_in, cost_out, cost_cache, cost_total = calc_usage_cost_rub(
+                model, usage_in, usage_out
+            )
             yield {
                 "kind": "final",
                 "usage_in": str(usage_in),
                 "usage_out": str(usage_out),
                 "billed": str(billed),
                 "deficit": str(deficit),
+                "cost_in": f"{cost_in}",
+                "cost_out": f"{cost_out}",
+                "cost_cache": f"{cost_cache}",
+                "cost_total": f"{cost_total}",
             }
