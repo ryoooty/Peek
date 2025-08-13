@@ -7,10 +7,12 @@ from pathlib import Path
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
+
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand
 from app.mw.ban import BanMiddleware
 from app.mw.maintenance import MaintenanceMiddleware
+
 from app.mw.rate_limit import RateLimitLLM
 from app.config import settings, register_reload_hook
 from app import storage
