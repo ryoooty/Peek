@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from app.config import settings
+
 sqlite3.register_adapter(bool, int)
 sqlite3.register_converter("BOOLEAN", lambda v: bool(int(v)))
 
@@ -188,6 +190,21 @@ def _migrate() -> None:
         created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
         approved_by INTEGER,
         approved_at DATETIME
+    )"""
+    )
+
+    # ledger for accounting
+    _exec(
+        """
+    CREATE TABLE IF NOT EXISTS ledger (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id     INTEGER NOT NULL,
+        provider    TEXT,
+        amount      REAL,
+        tokens      INTEGER,
+        rate        REAL,
+        topup_id    INTEGER,
+        created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
     )"""
     )
 
@@ -601,15 +618,25 @@ def create_topup_pending(user_id: int, amount: float, provider: str) -> int:
     return int(cur.lastrowid)
 
 
+def _log_ledger(user_id: int, amount: float, tokens: int, provider: str, topup_id: int, rate: float) -> None:
+    _exec(
+        "INSERT INTO ledger(user_id, provider, amount, tokens, rate, topup_id) VALUES (?,?,?,?,?,?)",
+        (user_id, provider, float(amount), int(tokens), float(rate), topup_id),
+    )
+
+
 def approve_topup(topup_id: int, admin_id: int) -> bool:
-    r = _q("SELECT user_id, amount, status FROM topups WHERE id=?", (topup_id,)).fetchone()
+    r = _q("SELECT user_id, amount, provider, status FROM topups WHERE id=?", (topup_id,)).fetchone()
     if not r or r["status"] != "pending":
         return False
     _exec(
         "UPDATE topups SET status='approved', approved_by=?, approved_at=CURRENT_TIMESTAMP WHERE id=?",
         (admin_id, topup_id),
     )
-    add_paid_tokens(int(r["user_id"]), int(float(r["amount"]) * 1000))  # пример: 1 у.е. = 1000 токенов
+    rate = float(settings.tokens_per_rub)
+    tokens = int(float(r["amount"]) * rate)
+    add_paid_tokens(int(r["user_id"]), tokens)
+    _log_ledger(int(r["user_id"]), float(r["amount"]), tokens, str(r["provider"]), topup_id, rate)
     return True
 
 

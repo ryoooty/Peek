@@ -130,6 +130,11 @@ class Settings(BaseSettings):
     # Flags
     global_typing_enabled: bool = True
 
+    # Payments
+    boosty_secret: Optional[str] = None
+    donationalerts_secret: Optional[str] = None
+    tokens_per_rub: float = 1000.0  # how many internal tokens per 1 RUB
+
 settings = Settings()
 
 

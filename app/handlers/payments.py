@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from aiogram import Router
+import hashlib
+import hmac
+import json
+from typing import Any
+
+from aiohttp import web
+from aiogram import Bot, Router
 from aiogram.filters import Command
 from aiogram.types import Message
 
@@ -8,6 +14,71 @@ from app import storage
 from app.config import settings
 
 router = Router(name="payments")
+
+
+# ----------------- Helpers -----------------
+async def _notify_admins(text: str) -> None:
+    """Send notification about topup to all admins."""
+    if not settings.admin_ids:
+        return
+    try:
+        async with Bot(token=settings.bot_token) as bot:
+            for admin_id in settings.admin_ids:
+                try:
+                    await bot.send_message(admin_id, text)
+                except Exception:
+                    continue
+    except Exception:
+        # If bot can't be created we silently ignore – webhook should not fail
+        pass
+
+
+def _verify_signature(body: bytes, header_sig: str | None, secret: str | None) -> bool:
+    if not secret:
+        return True  # no secret -> skip check
+    if not header_sig:
+        return False
+    mac = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(mac, header_sig)
+
+
+# ----------------- Webhooks -----------------
+async def _handle_webhook(request: web.Request, provider: str, secret: str | None) -> web.Response:
+    body = await request.read()
+    if not _verify_signature(body, request.headers.get("X-Signature"), secret):
+        return web.Response(status=403, text="invalid signature")
+    try:
+        payload: dict[str, Any] = json.loads(body.decode("utf-8"))
+    except Exception:
+        return web.Response(status=400, text="bad json")
+
+    user_id = int(payload.get("user_id") or 0)
+    amount = float(payload.get("amount") or 0)
+    if not user_id or amount <= 0:
+        return web.Response(status=400, text="invalid payload")
+
+    tid = storage.create_topup_pending(user_id, amount, provider=provider)
+    note = f"Заявка на пополнение #{tid}\nUser: {user_id}\nСумма: {amount}"
+    await _notify_admins(note)
+    return web.json_response({"status": "ok", "topup_id": tid})
+
+
+async def boosty_webhook(request: web.Request) -> web.Response:
+    return await _handle_webhook(request, "boosty", settings.boosty_secret)
+
+
+async def donationalerts_webhook(request: web.Request) -> web.Response:
+    return await _handle_webhook(request, "donationalerts", settings.donationalerts_secret)
+
+
+def setup_webhooks(app: web.Application) -> None:
+    """Register webhook endpoints on aiohttp app."""
+    app.add_routes(
+        [
+            web.post("/boosty/webhook", boosty_webhook),
+            web.post("/donationalerts/webhook", donationalerts_webhook),
+        ]
+    )
 
 
 @router.message(Command("pay"))
