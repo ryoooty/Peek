@@ -6,9 +6,9 @@ import random
 from typing import Optional, Dict, List
 
 from aiogram import Bot
-from app import storage
+from app import storage, runtime
 from app.config import settings
-from app.runtime import set_scheduler
+
 
 # APScheduler — опционально (без SQLAlchemyJobStore, чтобы не требовать SQLAlchemy)
 try:
@@ -50,14 +50,13 @@ def init(bot: Bot) -> None:
     """
     global _scheduler, _bot
     _bot = bot
-
-
     if AsyncIOScheduler is None:
         # APScheduler не установлен — тихо деградируем
         return
 
     _scheduler = AsyncIOScheduler(timezone=dt.timezone.utc)
     _scheduler.start()
+    runtime.set_scheduler(_scheduler)
 
     _add_job(
         "daily_bonus:free",

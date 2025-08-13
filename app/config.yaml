@@ -1,3 +1,5 @@
+config_version: 1
+log_level: INFO
 default_model: deepseek-chat
 model_tariffs:
   deepseek-chat: {input_per_1k: 1.0, output_per_1k: 1.0, cache_per_1k: 0.5}

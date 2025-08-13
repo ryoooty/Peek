@@ -83,7 +83,9 @@ class Settings(BaseSettings):
     admin_ids: List[int] = Field(default_factory=list)
     db_path: str = Field(default=str(BASE_DIR / "data.db"))
     env: str = Field(default="dev")
-    log_level: str = "INFO"
+    log_level: str = Field(default="INFO")
+    config_version: int = Field(default=1)
+
 
     # Provider
     deepseek_api_key: Optional[str] = None

@@ -6,32 +6,25 @@ import logging
 from pathlib import Path
 
 from aiogram import Bot, Dispatcher
-
 from aiogram.client.default import DefaultBotProperties
-
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand
-from app.mw.ban import BanMiddleware
 from app.mw.maintenance import MaintenanceMiddleware
-
-from app.mw.rate_limit import RateLimitLLM
 from app.config import settings, register_reload_hook
 from app import storage
 # bot.py, в main() после создания bot и dp
-from app import scheduler
+from app import scheduler, runtime
 
 
 
-# Routers (подключаем команды и меню раньше, чат — последним)
 
+# Routers (подключаем команды и меню раньше, чат — последн
 from app.handlers import admin as admin_handlers
-from app.handlers import broadcast as broadcast_handlers
 from app.handlers import user as user_handlers
 from app.handlers import characters as characters_handlers
 from app.handlers import profile as profile_handlers
 from app.handlers import balance as balance_handlers
 from app.handlers import chats as chats_handlers  # <- чат-обработчики ДОЛЖНЫ идти последними
-
 
 
 # Если используете подписочный гейт, импортируйте из вашего модуля:
@@ -40,15 +33,8 @@ try:
 except Exception:
     SubscriptionGateMiddleware = None  # опционально
 
-try:
-    from app.middlewares.timezone import TimezoneMiddleware
-except Exception:
-    TimezoneMiddleware = None
+runtime.setup_logging()
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-)
 
 
 async def _set_bot_commands(bot: Bot) -> None:

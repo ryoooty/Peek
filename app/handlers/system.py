@@ -4,8 +4,9 @@ from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
 
-from app.config import config_version, reload_settings, settings
-from app.runtime import get_error_counters, get_scheduler
+from app import runtime, storage
+from app.config import reload_settings, settings
+
 from app.scheduler import rebuild_user_jobs
 
 router = Router(name="system")
@@ -47,21 +48,23 @@ async def cmd_maintenance(msg: Message):
 async def cmd_diag(msg: Message):
     if msg.from_user.id not in settings.admin_ids:
         return
-    sched = get_scheduler()
-    jobs = []
-    if sched:
+    scheduler = runtime.get_scheduler()
+    job_ids: list[str] = []
+    if scheduler:
         try:
-            jobs = sched.get_jobs()
+            job_ids = [j.id or "" for j in scheduler.get_jobs()]
         except Exception:
-            jobs = []
-    gate = "ON" if settings.sub_channel_id else "OFF"
-    errors = get_error_counters()
-    job_ids = ", ".join(j.id for j in jobs if getattr(j, "id", None)) or "none"
+            pass
+    gate_state = "ON" if settings.sub_channel_id else "OFF"
+    err_counts = runtime.get_error_counts()
+    err_text = ", ".join(f"{k}={v}" for k, v in err_counts.items()) or "—"
     text = (
-        f"Config version: {config_version}\n"
-        f"Jobs ({len(jobs)}): {job_ids}\n"
-        f"Sub gate: {gate}\n"
-        f"Errors: {errors}"
+        f"Config v{settings.config_version}\n"
+        f"Jobs ({len(job_ids)}): {', '.join(job_ids) if job_ids else '—'}\n"
+        f"Sub gate: {gate_state}\n"
+        f"Errors: {err_text}"
+
+
     )
     await msg.answer(text)
 
@@ -70,19 +73,13 @@ async def cmd_diag(msg: Message):
 async def cmd_health(msg: Message):
     if msg.from_user.id not in settings.admin_ids:
         return
-    from app import storage
-
-    tables = ["users", "characters", "chats", "messages", "fav_chars", "proactive_plan", "proactive_log", "topups"]
-    results = []
-    for t in tables:
-        try:
-            storage._q(f"SELECT 1 FROM {t} LIMIT 1")
-            results.append(f"{t}: ok")
-        except Exception as e:
-            results.append(f"{t}: {e}")
+    tables = ["users", "characters", "chats", "messages"]
     try:
-        qc = storage._q("PRAGMA quick_check").fetchone()
-        results.append(f"quick_check: {qc[0] if qc else 'unknown'}")
+        for t in tables:
+            storage._q(f"SELECT 1 FROM {t} LIMIT 1")
     except Exception as e:
-        results.append(f"quick_check: {e}")
-    await msg.answer("Health:\n" + "\n".join(results))
+        runtime.incr_error("db")
+        await msg.answer(f"DB error: {e}")
+        return
+    await msg.answer("OK")
+
