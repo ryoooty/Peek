@@ -23,11 +23,12 @@ def _profile_text(u: dict) -> str:
         top_line = f"{totals['top_character']} ({totals['top_count']} сооб.)"
     sub = (u.get("subscription") or "free").lower()
     chats_total = len(storage.list_user_chats(u["tg_id"], page=1, page_size=9999))
+
     model = (u.get("default_model") or settings.default_model)
     live_on = bool(u.get("proactive_enabled") or 0)
     per_day = int(u.get("pro_per_day") or 2)
     gap_min = int(u.get("pro_min_gap_min") or 10)
-    max_delay = int(u.get("pro_max_delay_min") or 720)
+    max_delay = int(u.get("pro_max_delay_min") or 240)
     return (
         "<b>Профиль</b>\n"
         f"Подписка: <b>{sub}</b>\n"
@@ -40,6 +41,7 @@ def _profile_text(u: dict) -> str:
         f"Всего чатов: <b>{chats_total}</b>\n"
         f"Топ персонаж: <b>{top_line}</b>\n"
     )
+
 
 
 def _profile_kb(u: dict):
@@ -143,15 +145,17 @@ async def cb_back(call: CallbackQuery):
 @router.callback_query(F.data == "set:live")
 async def cb_set_live(call: CallbackQuery):
     u = storage.get_user(call.from_user.id) or {}
+
     live_on = bool(u.get("proactive_enabled") or 0)
     kb = InlineKeyboardBuilder()
     kb.button(text=("🟢 Выключить Live" if live_on else "🟢 Включить Live"), callback_data="set:live:toggle")
     kb.button(text=f"В день: {int(u.get('pro_per_day') or 2)}", callback_data="set:live:per")
     kb.button(text=f"Окно: {u.get('pro_window_local') or '09:00-21:00'}", callback_data="set:live:win")
     kb.button(text=f"Пауза: {int(u.get('pro_min_gap_min') or 10)} мин", callback_data="set:live:gap")
-    kb.button(text=f"Макс: {int(u.get('pro_max_delay_min') or 720)} мин", callback_data="set:live:max")
+    kb.button(text=f"Макс. интервал: {int(u.get('pro_max_delay_min') or 240)} мин", callback_data="set:live:max")
     kb.button(text="⬅ Назад", callback_data="prof:settings")
     kb.adjust(1)
+
     await call.message.edit_text(
         "Настройка Live:\n— Сообщения по случайным таймингам в течение суток.\n— Можно включить/выключить и настроить частоту.",
         reply_markup=kb.as_markup()
@@ -205,20 +209,32 @@ async def cb_set_live_win(call: CallbackQuery):
     await cb_set_live(call)
 
 
+
 @router.callback_query(F.data == "set:live:gap")
 async def cb_set_live_gap(call: CallbackQuery):
     u = storage.get_user(call.from_user.id) or {}
     val = int(u.get("pro_min_gap_min") or 10)
     cycle = [5, 10, 15, 30, 60, 120]
-
-    
     try:
         nxt = cycle[(cycle.index(val) + 1) % len(cycle)]
     except ValueError:
         nxt = 10
     storage.set_user_field(call.from_user.id, "pro_min_gap_min", nxt)
-    rebuild_user_jobs(call.from_user.id)
     await cb_set_live(call)
+
+
+@router.callback_query(F.data == "set:live:max")
+async def cb_set_live_max(call: CallbackQuery):
+    u = storage.get_user(call.from_user.id) or {}
+    val = int(u.get("pro_max_delay_min") or 240)
+    cycle = [60, 120, 180, 240, 360, 720]
+    try:
+        nxt = cycle[(cycle.index(val) + 1) % len(cycle)]
+    except ValueError:
+        nxt = 240
+    storage.set_user_field(call.from_user.id, "pro_max_delay_min", nxt)
+    await cb_set_live(call)
+
 
     
 

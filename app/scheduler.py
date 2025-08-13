@@ -278,12 +278,40 @@ def _rand_between(start_ts: int, end_ts: int) -> int:
 
 
 
+def _get_delay_range_sec(user_id: int) -> tuple[int, int]:
+    """Пара (min,max) задержки в секундах для пользователя."""
+    return storage.get_delay_range(user_id)
+
+
+def _schedule_next(user_id: int, delay_sec: Optional[int] = None) -> None:
+    """Поставить следующий нудж через случайный интервал и сохранить план."""
+    if not _scheduler:
+        return
+    u = storage.get_user(user_id) or {}
+    if int(u.get("proactive_enabled") or 0) != 1:
+        return
+    last_chat = _get_last_chat_id(user_id)
+    if not last_chat:
+        return
+    if delay_sec is None:
+        mn, mx = _get_delay_range_sec(user_id)
+        delay_sec = _rand_between(int(mn), int(mx))
+    when_ts = _now_ts() + int(delay_sec)
+    jid = f"nudge:{user_id}:{when_ts}"
+    _add_job(jid, "date", run_date=dt.datetime.utcfromtimestamp(when_ts), func=_on_nudge_due, args=(user_id,))
+    _user_jobs[user_id] = [jid]
+    try:
+        storage.delete_future_plan(user_id)
+        storage.insert_plan(user_id, last_chat, when_ts)
+    except Exception:
+        pass
+
 
 
 async def _tick_fill_plans():
     """
-    Раз в минуту: если у юзера Live включён и будущих джоб нет — создадим суточный план.
-    (Мягкий автозапуск, чтобы планы не «забывались».)
+    Раз в минуту: если у юзера Live включён и будущих джоб нет — создадим новый тайминг.
+    (Мягкий автозапуск, чтобы план не «забывался».)
     """
     if not _scheduler:
         return
@@ -299,21 +327,10 @@ async def _tick_fill_plans():
                         break
                 except Exception:
                     continue
+
         if not has_future:
-            _plan_daily(uid)
+            _schedule_next(uid)
 
-
-def _plan_daily(user_id: int) -> None:
-    """
-    Поставить следующую отправку через случайный интервал.
-    """
-    if not _scheduler:
-        return
-    last_chat = _get_last_chat_id(user_id)
-    if not last_chat:
-        return
-    _user_jobs.pop(user_id, None)
-    _reschedule_in(user_id)
 
 
 async def _on_silence(user_id: int, chat_id: int):
@@ -338,8 +355,8 @@ async def _on_silence(user_id: int, chat_id: int):
             except Exception:
                 continue
 
-    # создаём новый суточный план
-    _plan_daily(user_id)
+    # создаём новый тайминг
+    _schedule_next(user_id)
 
 
 async def _on_nudge_due(user_id: int):
@@ -351,43 +368,31 @@ async def _on_nudge_due(user_id: int):
     last_chat = _get_last_chat_id(user_id)
     if not last_chat:
         # нет чатов — перенести
-        _reschedule_in(user_id)
+        _schedule_next(user_id)
         return
 
     now = _now_ts()
     # если была активность <5 минут назад — перенос
     if _last_message_recent(last_chat, 5 * 60):
-        _reschedule_in(user_id)
+        _schedule_next(user_id)
         return
+
 
     # min_gap
     _, _, min_gap = _get_user_settings(user_id)
     last_sent = _last_proactive_ts(user_id)
     if last_sent and (now - last_sent) < min_gap:
-        _reschedule_at(user_id, when_ts=last_sent + min_gap + _rand_between(30, 300))
+        wait = last_sent + min_gap + _rand_between(30, 300) - now
+        _schedule_next(user_id, delay_sec=wait)
         return
 
     # попытка отправки (через доменную функцию)
     ok = await _try_send_nudge(user_id, last_chat)
+    # назначаем следующий тайминг независимо от результата
+    _schedule_next(user_id)
     if ok:
-        # успех — ничего не делаем (domain уже записал логи/usage)
         return
-    # неудача — перенести
-    _reschedule_in(user_id)
 
-
-def _reschedule_in(user_id: int) -> None:
-    min_delay, max_delay, _ = _get_user_settings(user_id)
-    delay = _rand_between(min_delay, max_delay)
-    _reschedule_at(user_id, when_ts=_now_ts() + delay)
-
-
-def _reschedule_at(user_id: int, *, when_ts: int) -> None:
-    if not _scheduler:
-        return
-    jid = f"nudge:{user_id}:{when_ts}"
-    _add_job(jid, "date", run_date=dt.datetime.utcfromtimestamp(when_ts), func=_on_nudge_due, args=(user_id,))
-    _user_jobs.setdefault(user_id, []).append(jid)
 
 
 async def _try_send_nudge(user_id: int, chat_id: int) -> bool:
