@@ -1,10 +1,27 @@
 # >>> admin.py
 from pathlib import Path
 import time
+
+from aiogram import Router
+from aiogram.filters import Command
 from aiogram.types import Message
 from aiogram.exceptions import TelegramBadRequest
-from app.config import BASE_DIR
 from aiogram.types.input_file import FSInputFile  # если будете где-то отправлять локальные файлы
+
+from app import storage
+from app.config import BASE_DIR, settings
+
+router = Router(name="admin")
+
+
+async def _require_admin(msg: Message) -> bool:
+    if msg.from_user.id not in settings.admin_ids:
+        try:
+            await msg.answer("Доступ запрещён")
+        except Exception:
+            pass
+        return False
+    return True
 
 MEDIA_DIR = Path(BASE_DIR) / "media" / "characters"
 MEDIA_DIR.mkdir(parents=True, exist_ok=True)
@@ -62,9 +79,10 @@ async def cmd_char_photo(msg: Message):
         except Exception as e:
             return await msg.answer(f"Не удалось скачать фото: <code>{e}</code>")
 
-    # сохраняем путь в БД
+    # сохраняем идентификатор и путь в БД
+    storage.set_character_photo(char_id, file_id)
     storage.set_character_photo_path(char_id, str(save_path.as_posix()))
-    # (опц.) можно сбросить старый photo_id, чтобы точно использовался путь:
-    # storage.set_character_photo(char_id, None)
 
-    await msg.answer("Фото сохранено ✅\nПуть: <code>{}</code>".format(save_path.as_posix()))
+    await msg.answer(
+        "Фото сохранено ✅\nПуть: <code>{}</code>".format(save_path.as_posix())
+    )
