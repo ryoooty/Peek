@@ -11,6 +11,8 @@ from app.config import settings
 
 router = Router(name="profile")
 
+__all__ = ("show_profile", "cb_balance")
+
 
 def _profile_text(u: dict) -> str:
     totals = storage.user_totals(u["tg_id"])
