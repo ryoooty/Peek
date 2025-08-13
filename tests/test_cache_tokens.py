@@ -32,6 +32,7 @@ class DummySettings:
         self.deepseek_api_key = None
 
 
+
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))
@@ -103,3 +104,4 @@ def test_live_stream_accumulates_cache_tokens(tmp_path, monkeypatch):
 async def _consume_stream(gen):
     async for _ in gen:
         pass
+
