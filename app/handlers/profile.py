@@ -270,7 +270,7 @@ async def cb_set_compress(call: CallbackQuery):
 @router.callback_query(F.data == "set:tz")
 async def cb_set_tz(call: CallbackQuery):
     await call.message.edit_text(
-        "Выберите часовой пояс:", reply_markup=tz_keyboard("tzprof")
+        "Выберите часовой пояс:", reply_markup=tz_keyboard(prefix="tzprof")
     )
     await call.answer()
 
@@ -290,4 +290,4 @@ async def cb_tz_prof(call: CallbackQuery):
 
 @router.message(Command("tz"))
 async def cmd_tz(msg: Message):
-    await msg.answer("Выберите часовой пояс:", reply_markup=tz_keyboard("tzprof"))
+    await msg.answer("Выберите часовой пояс:", reply_markup=tz_keyboard(prefix="tzprof"))
