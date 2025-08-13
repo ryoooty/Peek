@@ -8,12 +8,15 @@ from typing import Optional, Dict, List
 from aiogram import Bot
 from app import storage
 from app.config import settings
+from app.runtime import set_scheduler
 
 # APScheduler — опционально (без SQLAlchemyJobStore, чтобы не требовать SQLAlchemy)
 try:
     from apscheduler.schedulers.asyncio import AsyncIOScheduler  # type: ignore
+    from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore  # type: ignore
 except Exception:
     AsyncIOScheduler = None  # type: ignore
+    SQLAlchemyJobStore = None  # type: ignore
 
 """
 ЛОГИКА (без «окон»):
@@ -39,6 +42,7 @@ _user_jobs: Dict[int, List[str]] = {}  # user_id -> [job_id,...]
 
 # ---------------- Public API ----------------
 
+
 def init(bot: Bot) -> None:
     """
     Запуск планировщика и периодических тиков.
@@ -47,6 +51,7 @@ def init(bot: Bot) -> None:
     global _scheduler, _bot
     _bot = bot
 
+
     if AsyncIOScheduler is None:
         # APScheduler не установлен — тихо деградируем
         return
@@ -54,7 +59,16 @@ def init(bot: Bot) -> None:
     _scheduler = AsyncIOScheduler(timezone=dt.timezone.utc)
     _scheduler.start()
 
+    _add_job(
+        "daily_bonus:free",
+        "cron",
+        hour=0,
+        minute=5,
+        func=storage.daily_bonus_free_users,
+    )
+
     # Ежеминутный тик на случай подвисших/забытых пользователей:
+
     # Если у юзера включён Live и нет будущих джоб — создадим суточный план.
     _add_job("proactive:tick", "interval", minutes=1, func=_tick_fill_plans)
 
@@ -78,6 +92,64 @@ def schedule_silence_check(user_id: int, chat_id: int, delay_sec: int = 600) -> 
     _add_job(jid, "date", run_date=run_at, func=_on_silence, args=(user_id, chat_id))
 
 
+def rebuild_user_jobs(user_id: int) -> None:
+    """Пересобрать суточный план Live для указанного пользователя.
+
+    Удаляет все существующие джобы пользователя (nudge и silence) и,
+    если режим Live включён, создаёт новый дневной план.
+    """
+    if not _scheduler:
+        return
+
+    # удалить старые джобы пользователя
+    try:
+        for j in list(_scheduler.get_jobs()):  # type: ignore
+            if not j.id:
+                continue
+            if j.id.startswith(f"nudge:{user_id}:") or j.id.startswith(f"silence:{user_id}:"):
+                try:
+                    _scheduler.remove_job(j.id)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    _user_jobs.pop(user_id, None)
+
+    # если Live включён — пересоздать план
+    u = storage.get_user(user_id) or {}
+    if int(u.get("proactive_enabled") or 0) == 1:
+        _plan_daily(user_id)
+
+
+def rebuild_user_jobs(user_id: int) -> None:
+    """
+    Очистить и заново сгенерировать проактивные джобы для одного пользователя.
+    """
+    if not _scheduler:
+        return
+
+    # Снести все существующие джобы пользователя
+    for jid in _user_jobs.pop(user_id, []):
+        try:
+            _scheduler.remove_job(jid)  # type: ignore
+        except Exception:
+            pass
+
+    # Удалить незапланированные проверки тишины
+    try:
+        for j in list(_scheduler.get_jobs()):  # type: ignore
+            if j.id and j.id.startswith(f"silence:{user_id}:"):
+                try:
+                    _scheduler.remove_job(j.id)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    # Создать новый суточный план
+    _plan_daily(user_id)
+
+
 # ---------------- Internal helpers/jobs ----------------
 
 def _add_job(job_id: str, trigger: str, **kw) -> None:
@@ -90,18 +162,86 @@ def _add_job(job_id: str, trigger: str, **kw) -> None:
         pass
 
 
+def _parse_hhmm(s: str) -> tuple[int, int]:
+    return int(s[:2]), int(s[3:5])
+
+
+def _today_utc(h: int, m: int, *, day_shift: int = 0) -> dt.datetime:
+    now = dt.datetime.now(dt.timezone.utc)
+    return now.replace(hour=h, minute=m, second=0, microsecond=0) + dt.timedelta(days=day_shift)
+
+
+def schedule_window_jobs_for_user(user_id: int) -> None:
+    if not _scheduler:
+        return
+    u = storage.get_user(user_id) or {}
+    if int(u.get("proactive_enabled") or 0) != 1:
+        return
+    win = str(u.get("pro_window_utc") or "06:00-18:00")
+    s, e = win.split("-")
+    sh, sm = _parse_hhmm(s)
+    eh, em = _parse_hhmm(e)
+    for shift in (0, 1):
+        start_dt = _today_utc(sh, sm, day_shift=shift)
+        end_dt = _today_utc(eh, em, day_shift=shift)
+        try:
+            _scheduler.add_job(
+                _on_window_start,
+                trigger="date",
+                run_date=start_dt,
+                id=f"winstart:{user_id}:{shift}",
+                args=(user_id,),
+                replace_existing=True,
+            )
+            _scheduler.add_job(
+                _on_window_end,
+                trigger="date",
+                run_date=end_dt,
+                id=f"winend:{user_id}:{shift}",
+                args=(user_id,),
+                replace_existing=True,
+            )
+        except Exception:
+            continue
+
+
+def rebuild_all_window_jobs() -> None:
+    if not _scheduler:
+        return
+    for uid in storage.select_proactive_candidates():
+        schedule_window_jobs_for_user(uid)
+
+
+def _on_window_start(user_id: int) -> None:
+    _plan_daily(user_id)
+    schedule_window_jobs_for_user(user_id)
+
+
+def _on_window_end(user_id: int) -> None:
+    if not _scheduler:
+        return
+    for j in list(_scheduler.get_jobs()):  # type: ignore
+        if j.id and (j.id.startswith(f"nudge:{user_id}:") or j.id.startswith(f"silence:{user_id}:")):
+            try:
+                _scheduler.remove_job(j.id)
+            except Exception:
+                continue
+    schedule_window_jobs_for_user(user_id)
+
+
 def _now_ts() -> int:
     return int(dt.datetime.utcnow().timestamp())
 
 
-def _get_user_settings(user_id: int) -> tuple[int, int]:
+def _get_user_settings(user_id: int) -> tuple[int, int, int]:
     """
-    Возвращает (per_day, min_gap_sec) с дефолтами (2; 600).
+    Возвращает (min_delay_sec, max_delay_sec, min_gap_sec).
     """
     u = storage.get_user(user_id) or {}
-    per_day = int(u.get("pro_per_day") or 2)            # дефолт 2
+    min_delay_sec = int(u.get("pro_min_delay_min") or 60) * 60  # дефолт 60 мин
+    max_delay_sec = int(u.get("pro_max_delay_min") or 720) * 60  # дефолт 720 мин
     min_gap_sec = int(u.get("pro_min_gap_min") or 10) * 60  # дефолт 10 мин
-    return per_day, min_gap_sec
+    return min_delay_sec, max_delay_sec, min_gap_sec
 
 
 def _get_last_chat_id(user_id: int) -> Optional[int]:
@@ -167,6 +307,7 @@ def _schedule_next(user_id: int, delay_sec: Optional[int] = None) -> None:
         pass
 
 
+
 async def _tick_fill_plans():
     """
     Раз в минуту: если у юзера Live включён и будущих джоб нет — создадим новый тайминг.
@@ -174,25 +315,22 @@ async def _tick_fill_plans():
     """
     if not _scheduler:
         return
-    rows = storage._q("SELECT tg_id, proactive_enabled FROM users").fetchall()
     now = _now_ts()
-    for r in rows:
-        uid = int(r["tg_id"])
-        if int(r["proactive_enabled"] or 0) != 1:
-            continue
+    for uid in storage.select_proactive_candidates():
         # есть ли хотя бы одна наша джоба для пользователя в будущем?
         has_future = False
         for j in _scheduler.get_jobs():  # type: ignore
             if j.id and (j.id.startswith(f"nudge:{uid}:") or j.id.startswith(f"silence:{uid}:")):
-                # если дата запуска в будущем — ок
                 try:
                     if j.next_run_time and int(j.next_run_time.timestamp()) > now:
                         has_future = True
                         break
                 except Exception:
                     continue
+
         if not has_future:
             _schedule_next(uid)
+
 
 
 async def _on_silence(user_id: int, chat_id: int):
@@ -239,8 +377,9 @@ async def _on_nudge_due(user_id: int):
         _schedule_next(user_id)
         return
 
+
     # min_gap
-    _, min_gap = _get_user_settings(user_id)
+    _, _, min_gap = _get_user_settings(user_id)
     last_sent = _last_proactive_ts(user_id)
     if last_sent and (now - last_sent) < min_gap:
         wait = last_sent + min_gap + _rand_between(30, 300) - now
@@ -253,6 +392,7 @@ async def _on_nudge_due(user_id: int):
     _schedule_next(user_id)
     if ok:
         return
+
 
 
 async def _try_send_nudge(user_id: int, chat_id: int) -> bool:
