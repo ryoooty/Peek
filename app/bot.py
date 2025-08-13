@@ -40,6 +40,11 @@ try:
 except Exception:
     SubscriptionGateMiddleware = None  # опционально
 
+try:
+    from app.middlewares.timezone import TimezoneMiddleware
+except Exception:
+    TimezoneMiddleware = None
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
@@ -72,12 +77,12 @@ async def main():
 
     # Middlewares (внешние)
 
-
     dp.update.outer_middleware(MaintenanceMiddleware())
     if SubscriptionGateMiddleware:
         dp.update.outer_middleware(SubscriptionGateMiddleware())
-    dp.update.outer_middleware(BanMiddleware())
-    dp.update.outer_middleware(RateLimitLLM())
+    if TimezoneMiddleware:
+        dp.update.outer_middleware(TimezoneMiddleware())
+    dp.update.outer_middleware(MaintenanceMiddleware())
 
     # Подключаем роутеры. ВАЖНО: «chats» — ПОСЛЕДНИЙ, чтобы не перехватывать slash-команды.
     dp.include_router(admin_handlers.router) 

@@ -252,18 +252,17 @@ def _migrate() -> None:
 
 # ------------- Users -------------
 
-def ensure_user(
-    user_id: int, username: Optional[str] = None, *, default_tz_min: int = 180
-) -> None:
+def ensure_user(user_id: int, username: Optional[str] = None) -> None:
     row = _q("SELECT tg_id FROM users WHERE tg_id=?", (user_id,)).fetchone()
     if row:
         if username:
             _exec("UPDATE users SET username=? WHERE tg_id=?", (username, user_id))
         return
     _exec(
-        "INSERT INTO users(tg_id, username, tz_offset_min) VALUES (?,?,?)",
-        (user_id, username, default_tz_min),
+        "INSERT INTO users(tg_id, username) VALUES (?,?)",
+        (user_id, username),
     )
+
 
 
 
