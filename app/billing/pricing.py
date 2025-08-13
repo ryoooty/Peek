@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """Utilities for translating token usage into actual cost in roubles."""
 
 from typing import Tuple
@@ -7,6 +8,7 @@ from app.config import settings
 
 
 def get_out_price_per_1k(model: str) -> float:
+
     """Return price for 1k output tokens for given model."""
     t = settings.model_tariffs.get(model) or settings.model_tariffs.get(
         settings.default_model
@@ -42,3 +44,4 @@ def calc_usage_cost_rub(
     total = round(price_in + price_out + price_cache, 4)
 
     return round(price_in, 4), round(price_out, 4), round(price_cache, 4), total
+
