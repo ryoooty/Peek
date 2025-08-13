@@ -20,6 +20,7 @@ from app import scheduler
 
 
 from app.handlers import admin as admin_handlers
+from app.handlers import broadcast as broadcast_handlers
 from app.handlers import user as user_handlers
 from app.handlers import characters as characters_handlers
 from app.handlers import profile as profile_handlers
@@ -69,7 +70,8 @@ async def main():
         dp.update.outer_middleware(SubscriptionGateMiddleware())
     dp.update.outer_middleware(MaintenanceMiddleware())
     # Подключаем роутеры. ВАЖНО: «chats» — ПОСЛЕДНИЙ, чтобы не перехватывать slash-команды.
-    dp.include_router(admin_handlers.router) 
+    dp.include_router(admin_handlers.router)
+    dp.include_router(broadcast_handlers.router)
     dp.include_router(user_handlers.router)        # /start, главное меню
     dp.include_router(characters_handlers.router)  # карточки персонажей
     dp.include_router(profile_handlers.router)     # профиль/настройки

@@ -176,6 +176,19 @@ def _migrate() -> None:
     )"""
     )
 
+    # broadcast log
+    _exec(
+        """
+    CREATE TABLE IF NOT EXISTS broadcast_log (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id     TEXT NOT NULL,
+        user_id    INTEGER NOT NULL,
+        status     TEXT NOT NULL,
+        error      TEXT,
+        sent_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+    )"""
+    )
+
     # payments (каркас)
     _exec(
         """
@@ -590,6 +603,13 @@ def log_proactive(user_id: int, chat_id: int, char_id: int, kind: str = "regular
         (user_id, chat_id, char_id, kind),
     )
     _exec("UPDATE users SET last_proactive_at=CURRENT_TIMESTAMP WHERE tg_id=?", (user_id,))
+
+
+def log_broadcast(run_id: str, user_id: int, status: str, error: str | None = None) -> None:
+    _exec(
+        "INSERT INTO broadcast_log(run_id, user_id, status, error) VALUES (?,?,?,?)",
+        (run_id, user_id, status, error),
+    )
 
 
 # ------------- Payments -------------
