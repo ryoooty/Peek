@@ -1,54 +1,70 @@
-from __future__ import annotations
-
-from aiogram import Router
-from aiogram.filters import Command
+# >>> admin.py
+from pathlib import Path
+import time
 from aiogram.types import Message
+from aiogram.exceptions import TelegramBadRequest
+from app.config import BASE_DIR
+from aiogram.types.input_file import FSInputFile  # если будете где-то отправлять локальные файлы
 
-from app import storage
-from app.config import settings
-
-router = Router(name="admin")
-
-
-@router.message(Command("char_add"))
-async def cmd_char_add(msg: Message):
-    if msg.from_user.id not in settings.admin_ids:
-        return
-    # /char_add <name> [fandom] [info_short...]
-    parts = (msg.text or "").split(maxsplit=2)
-    if len(parts) < 2:
-        return await msg.answer("Использование: /char_add <name> [fandom] [info_short]")
-    name = parts[1]
-    fandom = None
-    info = None
-    if len(parts) >= 3:
-        tmp = parts[2].split(maxsplit=1)
-        fandom = tmp[0]
-        info = tmp[1] if len(tmp) > 1 else None
-    cid = storage.ensure_character(name, fandom=fandom, info_short=info)
-    await msg.answer(
-        f"Персонаж «{name}» создан (id={cid}).\n"
-        f"Пришлите фото с подписью: /char_photo {cid}"
-    )
-
+MEDIA_DIR = Path(BASE_DIR) / "media" / "characters"
+MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 
 @router.message(Command("char_photo"))
 async def cmd_char_photo(msg: Message):
-    if msg.from_user.id not in settings.admin_ids:
+    if not await _require_admin(msg):
         return
     parts = (msg.text or "").split()
-    if len(parts) < 2:
-        return await msg.answer("Использование: отправьте фото с подписью: /char_photo <char_id>")
-    try:
-        char_id = int(parts[1])
-    except Exception:
-        return await msg.answer("Неверный id.")
+    if len(parts) < 2 and not (msg.caption or "").startswith("/char_photo"):
+        return await msg.answer(
+            "Использование: отправьте фото с подписью: <code>/char_photo &lt;id&gt;</code>"
+        )
+
+    # id берём либо из текста, либо из подписи
+    char_id = None
+    for source in (msg.text or "", msg.caption or ""):
+        ps = source.split()
+        if len(ps) >= 2 and ps[0] == "/char_photo":
+            try:
+                char_id = int(ps[1])
+                break
+            except Exception:
+                pass
+    if not char_id:
+        return await msg.answer("Неверный id. Пример: <code>/char_photo 123</code>")
+
+    # достаём file_id из фото
     file_id = None
     if msg.photo:
         file_id = msg.photo[-1].file_id
     elif msg.reply_to_message and msg.reply_to_message.photo:
         file_id = msg.reply_to_message.photo[-1].file_id
     if not file_id:
-        return await msg.answer("Пришлите фото с этой командой в подписи или ответом на фото.")
-    storage.set_character_photo(char_id, file_id)
-    await msg.answer("Фото обновлено ✅")
+        return await msg.answer(
+            "Пришлите фото с подписью команды или ответом на фото.\nПример: <code>/char_photo 123</code>"
+        )
+
+    # cкачиваем фото в media/characters
+    try:
+        fl = await msg.bot.get_file(file_id)
+        # Обычно Telegram даёт .jpg; на всякий случай определим расширение из пути
+        ext = Path(fl.file_path or "photo.jpg").suffix or ".jpg"
+        save_name = f"{char_id}_{int(time.time())}{ext}"
+        save_path = MEDIA_DIR / save_name
+        await msg.bot.download(file=fl.file_id, destination=save_path)
+    except TelegramBadRequest:
+        # fallback: если download по file_id не сработал — пробуем через file_path
+        try:
+            fl = await msg.bot.get_file(file_id)
+            ext = Path(fl.file_path or "photo.jpg").suffix or ".jpg"
+            save_name = f"{char_id}_{int(time.time())}{ext}"
+            save_path = MEDIA_DIR / save_name
+            await msg.bot.download(file=fl, destination=save_path)
+        except Exception as e:
+            return await msg.answer(f"Не удалось скачать фото: <code>{e}</code>")
+
+    # сохраняем путь в БД
+    storage.set_character_photo_path(char_id, str(save_path.as_posix()))
+    # (опц.) можно сбросить старый photo_id, чтобы точно использовался путь:
+    # storage.set_character_photo(char_id, None)
+
+    await msg.answer("Фото сохранено ✅\nПуть: <code>{}</code>".format(save_path.as_posix()))
