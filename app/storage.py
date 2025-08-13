@@ -8,6 +8,8 @@ from typing import Any, Dict, List, Optional, Tuple
 sqlite3.register_adapter(bool, int)
 sqlite3.register_converter("BOOLEAN", lambda v: bool(int(v)))
 
+from app.config import settings
+
 _conn: sqlite3.Connection | None = None
 _conn_path: Path | None = None
 
@@ -63,6 +65,7 @@ def _migrate() -> None:
         free_toki           INTEGER DEFAULT 0,    -- бесплатные (ночной бонус)
         paid_tokens         INTEGER DEFAULT 0,    -- платные токены
         cache_tokens        INTEGER DEFAULT 0,    -- накопленные «кэш-токены» (повторные отправки)
+        last_bonus_date     TEXT,
 
         tz_offset_min       INTEGER,
         default_chat_mode   TEXT DEFAULT 'rp',
@@ -81,6 +84,8 @@ def _migrate() -> None:
     )
     if not _has_col("users", "pro_free_used"):
         _exec("ALTER TABLE users ADD COLUMN pro_free_used INTEGER DEFAULT 0")
+    if not _has_col("users", "last_bonus_date"):
+        _exec("ALTER TABLE users ADD COLUMN last_bonus_date TEXT")
 
     # characters
 # >>> storage.py — в _migrate(), блок characters:
@@ -173,6 +178,17 @@ def _migrate() -> None:
         char_id     INTEGER,
         kind        TEXT DEFAULT 'regular', -- 'regular'|'free'|'paid'
         sent_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+    )"""
+    )
+
+    _exec(
+        """
+    CREATE TABLE IF NOT EXISTS token_log (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id     INTEGER NOT NULL,
+        amount      INTEGER NOT NULL,
+        meta        TEXT,
+        created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
     )"""
     )
 
@@ -518,11 +534,27 @@ def user_totals(user_id: int) -> Dict[str, Any]:
 
 
 # ------------- Billing (toki/tokens) -------------
+def _log_token(user_id: int, amount: int, meta: str) -> None:
+    _exec(
+        "INSERT INTO token_log(user_id, amount, meta) VALUES (?,?,?)",
+        (user_id, int(amount), meta),
+    )
+
+
+def list_token_log(user_id: int, limit: int = 10) -> List[Dict[str, Any]]:
+    rows = _q(
+        "SELECT amount, meta, created_at FROM token_log WHERE user_id=? ORDER BY id DESC LIMIT ?",
+        (user_id, int(limit)),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def add_toki(user_id: int, amount: int, meta: str = "bonus") -> None:
     _exec(
         "UPDATE users SET free_toki = free_toki + ? WHERE tg_id=?",
         (int(amount), user_id),
     )
+    _log_token(user_id, int(amount), meta)
 
 
 def add_paid_tokens(user_id: int, amount: int, meta: str = "topup") -> None:
@@ -530,6 +562,7 @@ def add_paid_tokens(user_id: int, amount: int, meta: str = "topup") -> None:
         "UPDATE users SET paid_tokens = paid_tokens + ? WHERE tg_id=?",
         (int(amount), user_id),
     )
+    _log_token(user_id, int(amount), meta)
 
 
 def add_cache_tokens(user_id: int, amount: int) -> None:
@@ -557,11 +590,13 @@ def spend_tokens(user_id: int, amount: int) -> Tuple[int, int, int]:
             "UPDATE users SET free_toki = free_toki - ? WHERE tg_id=?",
             (use_free, user_id),
         )
+        _log_token(user_id, -use_free, "spend_free")
     if use_paid:
         _exec(
             "UPDATE users SET paid_tokens = paid_tokens - ? WHERE tg_id=?",
             (use_paid, user_id),
         )
+        _log_token(user_id, -use_paid, "spend_paid")
     return use_free, use_paid, need  # need==deficit
 
 
@@ -569,6 +604,20 @@ def spend_tokens(user_id: int, amount: int) -> Tuple[int, int, int]:
 def nightly_bonus_toki(user_id: int, amount: int) -> None:
     today = datetime.utcnow().strftime("%Y-%m-%d")
     add_toki(user_id, amount, meta=f"nightly:{today}")
+
+
+def daily_bonus_free_users() -> List[int]:
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    amount = int(settings.nightly_toki_bonus.get("free") or 0)
+    rows = _q(
+        "SELECT tg_id FROM users WHERE subscription='free' AND (last_bonus_date IS NULL OR last_bonus_date<>?)",
+        (today,),
+    ).fetchall()
+    for r in rows:
+        uid = int(r["tg_id"])
+        add_toki(uid, amount, meta=f"daily:{today}")
+        _exec("UPDATE users SET last_bonus_date=? WHERE tg_id=?", (today, uid))
+    return [int(r["tg_id"]) for r in rows]
 
 
 # ------------- Proactive helpers -------------
