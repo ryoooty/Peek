@@ -30,6 +30,7 @@ from app.handlers import profile as profile_handlers
 from app.handlers import balance as balance_handlers
 from app.handlers import chats as chats_handlers  # <- чат-обработчики ДОЛЖНЫ идти последними
 from app.middlewares.subscription import SubscriptionGateMiddleware
+from app.middlewares.timezone import TimezoneMiddleware
 
 runtime.setup_logging()
 
@@ -62,6 +63,7 @@ async def main():
     # Middlewares (внешние)
     dp.update.outer_middleware(MaintenanceMiddleware())
     dp.update.outer_middleware(SubscriptionGateMiddleware())
+    dp.update.outer_middleware(TimezoneMiddleware())
     dp.update.outer_middleware(BanMiddleware())
     dp.update.outer_middleware(RateLimitLLM())
 
