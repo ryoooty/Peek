@@ -6,11 +6,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from app.config import settings
-
-
 sqlite3.register_adapter(bool, int)
 sqlite3.register_converter("BOOLEAN", lambda v: bool(int(v)))
+
+from app.config import settings
+
 
 _conn: sqlite3.Connection | None = None
 _conn_path: Path | None = None
@@ -83,6 +83,7 @@ def _migrate() -> None:
         free_toki           INTEGER DEFAULT 0,    -- бесплатные (ночной бонус)
         paid_tokens         INTEGER DEFAULT 0,    -- платные токены
         cache_tokens        INTEGER DEFAULT 0,    -- накопленные «кэш-токены» (повторные отправки)
+        last_bonus_date     TEXT,
 
         tz_offset_min       INTEGER,
         default_chat_mode   TEXT DEFAULT 'rp',
@@ -99,14 +100,13 @@ def _migrate() -> None:
         last_proactive_at    DATETIME,
         last_activity_at     DATETIME,
         is_chatting          INTEGER DEFAULT 0
+
     )"""
     )
     if not _has_col("users", "pro_free_used"):
         _exec("ALTER TABLE users ADD COLUMN pro_free_used INTEGER DEFAULT 0")
-    if not _has_col("users", "pro_min_delay_min"):
-        _exec("ALTER TABLE users ADD COLUMN pro_min_delay_min INTEGER DEFAULT 60")
-    if not _has_col("users", "pro_max_delay_min"):
-        _exec("ALTER TABLE users ADD COLUMN pro_max_delay_min INTEGER DEFAULT 240")
+    if not _has_col("users", "last_bonus_date"):
+        _exec("ALTER TABLE users ADD COLUMN last_bonus_date TEXT")
 
 
     # characters
@@ -197,6 +197,7 @@ def _migrate() -> None:
     # proactive log (для нуджей)
     _exec(
         """
+
     CREATE TABLE IF NOT EXISTS proactive_log (
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id     INTEGER NOT NULL,
@@ -207,7 +208,19 @@ def _migrate() -> None:
     )"""
     )
 
-    # broadcast log
+    _exec(
+        """
+    CREATE TABLE IF NOT EXISTS token_log (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id     INTEGER NOT NULL,
+        amount      INTEGER NOT NULL,
+        meta        TEXT,
+        created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+    )"""
+    )
+
+    # payments (каркас)
+
     _exec(
         """
     CREATE TABLE IF NOT EXISTS broadcast_log (
@@ -633,146 +646,28 @@ def user_totals(user_id: int) -> Dict[str, Any]:
     )
 
 
-def usage_by_day(days: int = 7, *, use_cache: bool = True) -> List[Dict[str, Any]]:
-    key = f"usage_day:{days}"
-    if use_cache:
-        cached = _cache_get(key, 60)
-        if cached is not None:
-            return cached
-    rows = _q(
-        """
-        SELECT
-          date(created_at) AS day,
-          COUNT(*) AS messages,
-          SUM(CASE WHEN is_user=1 THEN 1 ELSE 0 END) AS user_msgs,
-          SUM(CASE WHEN is_user=0 THEN 1 ELSE 0 END) AS ai_msgs,
-          SUM(COALESCE(usage_in,0)) AS in_tokens,
-          SUM(COALESCE(usage_out,0)) AS out_tokens
-        FROM messages
-        WHERE created_at >= date('now', ?)
-        GROUP BY day
-        ORDER BY day DESC
-        """,
-        (f"-{days - 1} day",),
-    ).fetchall()
-    result = [dict(r) for r in rows]
-    if use_cache:
-        _cache_set(key, result)
-    return result
-
-
-def usage_by_week(weeks: int = 4, *, use_cache: bool = True) -> List[Dict[str, Any]]:
-    key = f"usage_week:{weeks}"
-    if use_cache:
-        cached = _cache_get(key, 60)
-        if cached is not None:
-            return cached
-    rows = _q(
-        """
-        SELECT
-          strftime('%Y-%W', created_at) AS week,
-          COUNT(*) AS messages,
-          SUM(CASE WHEN is_user=1 THEN 1 ELSE 0 END) AS user_msgs,
-          SUM(CASE WHEN is_user=0 THEN 1 ELSE 0 END) AS ai_msgs,
-          SUM(COALESCE(usage_in,0)) AS in_tokens,
-          SUM(COALESCE(usage_out,0)) AS out_tokens
-        FROM messages
-        WHERE created_at >= date('now', ?)
-        GROUP BY week
-        ORDER BY week DESC
-        """,
-        (f"-{weeks * 7 - 1} day",),
-    ).fetchall()
-    result = [dict(r) for r in rows]
-    if use_cache:
-        _cache_set(key, result)
-    return result
-
-
-def top_characters(limit: int = 5, days: int | None = None, *, use_cache: bool = True) -> List[Dict[str, Any]]:
-    key = f"top_chars:{limit}:{days}"
-    if use_cache:
-        cached = _cache_get(key, 60)
-        if cached is not None:
-            return cached
-    where = "WHERE m.is_user=0"
-    params: List[Any] = []
-    if days:
-        where += " AND m.created_at >= date('now', ?)"
-        params.append(f"-{days - 1} day")
-    params.append(limit)
-    rows = _q(
-        f"""
-        SELECT ch.id AS id, ch.name AS name, COUNT(*) AS cnt
-          FROM messages m
-          JOIN chats c ON c.id=m.chat_id
-          JOIN characters ch ON ch.id=c.char_id
-          {where}
-         GROUP BY ch.id
-         ORDER BY cnt DESC
-         LIMIT ?
-        """,
-        tuple(params),
-    ).fetchall()
-    result = [dict(r) for r in rows]
-    if use_cache:
-        _cache_set(key, result)
-    return result
-
-
-def active_users(limit: int = 5, days: int | None = None, *, use_cache: bool = True) -> List[Dict[str, Any]]:
-    key = f"active_users:{limit}:{days}"
-    if use_cache:
-        cached = _cache_get(key, 60)
-        if cached is not None:
-            return cached
-    where = ""
-    params: List[Any] = []
-    if days:
-        where = "WHERE m.created_at >= date('now', ?)"
-        params.append(f"-{days - 1} day")
-    params.append(limit)
-    rows = _q(
-        f"""
-        SELECT u.tg_id AS user_id, u.username AS username, COUNT(*) AS cnt
-          FROM messages m
-          JOIN chats c ON c.id=m.chat_id
-          JOIN users u ON u.tg_id=c.user_id
-          {where}
-         GROUP BY u.tg_id
-         ORDER BY cnt DESC
-         LIMIT ?
-        """,
-        tuple(params),
-    ).fetchall()
-    result = [dict(r) for r in rows]
-    if use_cache:
-        _cache_set(key, result)
-    return result
-
-
-def total_usage_cost_rub(user_id: int) -> float:
-    r = _q(
-        """
-        SELECT COALESCE(SUM(m.usage_cost_rub),0) AS rub
-          FROM messages m
-          JOIN chats c ON c.id=m.chat_id
-         WHERE c.user_id=? AND m.is_user=0
-        """,
-        (user_id,),
-    ).fetchone()
-    return float(r["rub"] or 0.0)
-
 # ------------- Billing (toki/tokens) -------------
+def _log_token(user_id: int, amount: int, meta: str) -> None:
+    _exec(
+        "INSERT INTO token_log(user_id, amount, meta) VALUES (?,?,?)",
+        (user_id, int(amount), meta),
+    )
+
+
+def list_token_log(user_id: int, limit: int = 10) -> List[Dict[str, Any]]:
+    rows = _q(
+        "SELECT amount, meta, created_at FROM token_log WHERE user_id=? ORDER BY id DESC LIMIT ?",
+        (user_id, int(limit)),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def add_toki(user_id: int, amount: int, meta: str = "bonus") -> None:
     _exec(
         "UPDATE users SET free_toki = free_toki + ? WHERE tg_id=?",
         (int(amount), user_id),
     )
-    _exec(
-        "INSERT INTO toki_log(user_id, amount, meta) VALUES (?,?,?)",
-        (user_id, int(amount), meta),
-    )
+    _log_token(user_id, int(amount), meta)
 
 
 def add_paid_tokens(user_id: int, amount: int, meta: str = "topup") -> None:
@@ -780,10 +675,8 @@ def add_paid_tokens(user_id: int, amount: int, meta: str = "topup") -> None:
         "UPDATE users SET paid_tokens = paid_tokens + ? WHERE tg_id=?",
         (int(amount), user_id),
     )
-    _exec(
-        "INSERT INTO toki_log(user_id, amount, meta) VALUES (?,?,?)",
-        (user_id, int(amount), meta),
-    )
+    _log_token(user_id, int(amount), meta)
+
 
 
 def add_cache_tokens(user_id: int, amount: int) -> None:
@@ -811,11 +704,13 @@ def spend_tokens(user_id: int, amount: int) -> Tuple[int, int, int]:
             "UPDATE users SET free_toki = free_toki - ? WHERE tg_id=?",
             (use_free, user_id),
         )
+        _log_token(user_id, -use_free, "spend_free")
     if use_paid:
         _exec(
             "UPDATE users SET paid_tokens = paid_tokens - ? WHERE tg_id=?",
             (use_paid, user_id),
         )
+        _log_token(user_id, -use_paid, "spend_paid")
     return use_free, use_paid, need  # need==deficit
 
 
@@ -823,6 +718,20 @@ def spend_tokens(user_id: int, amount: int) -> Tuple[int, int, int]:
 def nightly_bonus_toki(user_id: int, amount: int) -> None:
     today = datetime.utcnow().strftime("%Y-%m-%d")
     add_toki(user_id, amount, meta=f"nightly:{today}")
+
+
+def daily_bonus_free_users() -> List[int]:
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    amount = int(settings.nightly_toki_bonus.get("free") or 0)
+    rows = _q(
+        "SELECT tg_id FROM users WHERE subscription='free' AND (last_bonus_date IS NULL OR last_bonus_date<>?)",
+        (today,),
+    ).fetchall()
+    for r in rows:
+        uid = int(r["tg_id"])
+        add_toki(uid, amount, meta=f"daily:{today}")
+        _exec("UPDATE users SET last_bonus_date=? WHERE tg_id=?", (today, uid))
+    return [int(r["tg_id"]) for r in rows]
 
 
 def get_toki_log(user_id: int, limit: int = 10) -> List[Dict[str, Any]]:

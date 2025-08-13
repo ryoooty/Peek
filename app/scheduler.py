@@ -71,6 +71,7 @@ def init(bot: Bot) -> None:
 
     # Если у юзера включён Live и нет будущих джоб — создадим суточный план.
     _add_job("proactive:tick", "interval", minutes=1, func=_tick_fill_plans)
+    _add_job("bonus:daily", "cron", hour=0, minute=5, func=_daily_bonus)
 
 
 def shutdown() -> None:
@@ -160,6 +161,18 @@ def _add_job(job_id: str, trigger: str, **kw) -> None:
     except Exception:
         # не критично
         pass
+
+
+async def _daily_bonus() -> None:
+    uids = storage.daily_bonus_free_users()
+    if not _bot:
+        return
+    amount = int(settings.nightly_toki_bonus.get("free") or 0)
+    for uid in uids:
+        try:
+            await _bot.send_message(uid, f"💰 Ежедневный бонус: +{amount} токов")
+        except Exception:
+            pass
 
 
 def _parse_hhmm(s: str) -> tuple[int, int]:
