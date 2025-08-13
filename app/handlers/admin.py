@@ -91,8 +91,6 @@ async def cmd_char_photo(msg: Message):
         "Фото сохранено ✅\nПуть: <code>{}</code>".format(save_path.as_posix())
     )
 
-    await msg.answer("Фото сохранено ✅\nПуть: <code>{}</code>".format(save_path.as_posix()))
-
 
 @router.message(Command("stats"))
 async def cmd_stats(msg: Message):

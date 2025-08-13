@@ -286,16 +286,15 @@ async def chatting_text(msg: Message):
         if mode == "live":
             full = ""
             buf = ""
-            min_first = 120
-            max_chars = 800
 
             async for ev in live_stream(msg.from_user.id, chat_id, msg.text):
                 if ev["kind"] == "chunk":
                     buf += ev["text"]
-                    piece, buf = _try_slice(buf, min_first=min_first, max_chars=max_chars)
-                    if piece and piece.strip():
-                        await msg.answer(piece)
-                        full += (("\n" if full else "") + piece)
+                    parts, buf = _extract_sections(buf)
+                    for piece in parts:
+                        if piece and piece.strip():
+                            await msg.answer(piece)
+                            full += (("\n" if full else "") + piece)
                 elif ev["kind"] == "final":
                     if buf.strip():
                         await msg.answer(buf.strip())
@@ -316,6 +315,7 @@ async def chatting_text(msg: Message):
                                 # ответ в live завершён — теперь стартуем таймер «10 минут тишины»
 
                     schedule_silence_check(msg.from_user.id, chat_id, delay_sec=600)
+
         else:
             # RP: один ответ
             r = await chat_turn(msg.from_user.id, chat_id, msg.text)
