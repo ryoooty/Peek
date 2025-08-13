@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from typing import AsyncGenerator, Dict, List, Tuple
 
 from app import storage
@@ -168,6 +169,7 @@ async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
 
     usage_in = int(r.usage_in or 0)
     usage_out = int(r.usage_out or 0)
+    storage.add_cache_tokens(user_id, usage_in + usage_out)
     billed, deficit = _apply_billing(user_id, model, usage_in, usage_out)
     cost_in, cost_out, cost_cache, cost_total = calc_usage_cost_rub(
         model, usage_in, usage_out
@@ -214,6 +216,7 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[D
         elif ev.get("type") == "usage":
             usage_in = int(ev.get("in") or 0)
             usage_out = int(ev.get("out") or 0)
+            storage.add_cache_tokens(user_id, usage_in + usage_out)
             billed, deficit = _apply_billing(user_id, model, usage_in, usage_out)
             cost_in, cost_out, cost_cache, cost_total = calc_usage_cost_rub(
                 model, usage_in, usage_out

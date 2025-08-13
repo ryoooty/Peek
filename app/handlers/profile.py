@@ -29,6 +29,7 @@ def _profile_text(u: dict) -> str:
     per_day = int(u.get("pro_per_day") or 2)
     gap_min = int(u.get("pro_min_gap_min") or 10)
     auto_cmp = settings.limits.auto_compress_default
+    cache = int(u.get("cache_tokens") or 0)
     return (
         "<b>Профиль</b>\n"
         f"Подписка: <b>{sub}</b>\n"
@@ -40,6 +41,7 @@ def _profile_text(u: dict) -> str:
         f"Всего сообщений: <b>{totals['user_msgs'] + totals['ai_msgs']}</b>\n"
         f"Всего чатов: <b>{chats_total}</b>\n"
         f"Топ персонаж: <b>{top_line}</b>\n"
+        f"Кэш‑токены: <b>{cache}</b>\n"
 
     )
 
