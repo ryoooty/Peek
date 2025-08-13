@@ -12,8 +12,10 @@ from app.config import settings
 # APScheduler — опционально (без SQLAlchemyJobStore, чтобы не требовать SQLAlchemy)
 try:
     from apscheduler.schedulers.asyncio import AsyncIOScheduler  # type: ignore
+    from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore  # type: ignore
 except Exception:
     AsyncIOScheduler = None  # type: ignore
+    SQLAlchemyJobStore = None  # type: ignore
 
 """
 ЛОГИКА (без «окон»):
@@ -40,10 +42,7 @@ _user_jobs: Dict[int, List[str]] = {}  # user_id -> [job_id,...]
 # ---------------- Public API ----------------
 
 def init(bot: Bot) -> None:
-    """
-    Запуск планировщика и периодических тиков.
-    Без SQLAlchemyJobStore — ничего ставить/устанавливать не требуется.
-    """
+    """Запуск планировщика и периодических тиков."""
     global _scheduler, _bot
     _bot = bot
 
@@ -51,8 +50,21 @@ def init(bot: Bot) -> None:
         # APScheduler не установлен — тихо деградируем
         return
 
-    _scheduler = AsyncIOScheduler(timezone=dt.timezone.utc)
+    jobstores = None
+    if settings.apscheduler_persist and SQLAlchemyJobStore is not None:
+        try:
+            url = f"sqlite:///{settings.jobs_db_path}"
+            jobstores = {"default": SQLAlchemyJobStore(url=url)}
+        except Exception:
+            jobstores = None
+
+    if jobstores:
+        _scheduler = AsyncIOScheduler(timezone=dt.timezone.utc, jobstores=jobstores)
+    else:
+        _scheduler = AsyncIOScheduler(timezone=dt.timezone.utc)
     _scheduler.start()
+
+    rebuild_all_window_jobs()
 
     # Ежеминутный тик на случай подвисших/забытых пользователей:
     # Если у юзера включён Live и нет будущих джоб — создадим суточный план.
@@ -88,6 +100,73 @@ def _add_job(job_id: str, trigger: str, **kw) -> None:
     except Exception:
         # не критично
         pass
+
+
+def _parse_hhmm(s: str) -> tuple[int, int]:
+    return int(s[:2]), int(s[3:5])
+
+
+def _today_utc(h: int, m: int, *, day_shift: int = 0) -> dt.datetime:
+    now = dt.datetime.now(dt.timezone.utc)
+    return now.replace(hour=h, minute=m, second=0, microsecond=0) + dt.timedelta(days=day_shift)
+
+
+def schedule_window_jobs_for_user(user_id: int) -> None:
+    if not _scheduler:
+        return
+    u = storage.get_user(user_id) or {}
+    if int(u.get("proactive_enabled") or 0) != 1:
+        return
+    win = str(u.get("pro_window_utc") or "06:00-18:00")
+    s, e = win.split("-")
+    sh, sm = _parse_hhmm(s)
+    eh, em = _parse_hhmm(e)
+    for shift in (0, 1):
+        start_dt = _today_utc(sh, sm, day_shift=shift)
+        end_dt = _today_utc(eh, em, day_shift=shift)
+        try:
+            _scheduler.add_job(
+                _on_window_start,
+                trigger="date",
+                run_date=start_dt,
+                id=f"winstart:{user_id}:{shift}",
+                args=(user_id,),
+                replace_existing=True,
+            )
+            _scheduler.add_job(
+                _on_window_end,
+                trigger="date",
+                run_date=end_dt,
+                id=f"winend:{user_id}:{shift}",
+                args=(user_id,),
+                replace_existing=True,
+            )
+        except Exception:
+            continue
+
+
+def rebuild_all_window_jobs() -> None:
+    if not _scheduler:
+        return
+    for uid in storage.select_proactive_candidates():
+        schedule_window_jobs_for_user(uid)
+
+
+def _on_window_start(user_id: int) -> None:
+    _plan_daily(user_id)
+    schedule_window_jobs_for_user(user_id)
+
+
+def _on_window_end(user_id: int) -> None:
+    if not _scheduler:
+        return
+    for j in list(_scheduler.get_jobs()):  # type: ignore
+        if j.id and (j.id.startswith(f"nudge:{user_id}:") or j.id.startswith(f"silence:{user_id}:")):
+            try:
+                _scheduler.remove_job(j.id)
+            except Exception:
+                continue
+    schedule_window_jobs_for_user(user_id)
 
 
 def _now_ts() -> int:
@@ -163,17 +242,12 @@ async def _tick_fill_plans():
     """
     if not _scheduler:
         return
-    rows = storage._q("SELECT tg_id, proactive_enabled FROM users").fetchall()
     now = _now_ts()
-    for r in rows:
-        uid = int(r["tg_id"])
-        if int(r["proactive_enabled"] or 0) != 1:
-            continue
+    for uid in storage.select_proactive_candidates():
         # есть ли хотя бы одна наша джоба для пользователя в будущем?
         has_future = False
         for j in _scheduler.get_jobs():  # type: ignore
             if j.id and (j.id.startswith(f"nudge:{uid}:") or j.id.startswith(f"silence:{uid}:")):
-                # если дата запуска в будущем — ок
                 try:
                     if j.next_run_time and int(j.next_run_time.timestamp()) > now:
                         has_future = True
@@ -181,7 +255,6 @@ async def _tick_fill_plans():
                 except Exception:
                     continue
         if not has_future:
-            # сгенерить суточный план от «сейчас»
             _plan_daily(uid)
 
 
