@@ -130,8 +130,11 @@ async def cb_what(call: CallbackQuery):
         await call.message.bot.send_chat_action(call.message.chat.id, ChatAction.TYPING)
         u = storage.get_user(call.from_user.id) or {}
         model = (u.get("default_model") or settings.default_model)
-        s = await summarize_chat(chat_id, model=model)
-        await call.message.edit_text(f"Кратко о чате:\n\n{s}", reply_markup=chat_inline_kb(chat_id, call.from_user.id).as_markup())
+        r = await summarize_chat(chat_id, model=model)
+        await call.message.edit_text(
+            f"Кратко о чате:\n\n{r.text}",
+            reply_markup=chat_inline_kb(chat_id, call.from_user.id).as_markup(),
+        )
     except Exception:
         await call.answer("Не удалось получить краткое содержание", show_alert=True)
 
