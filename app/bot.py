@@ -13,7 +13,7 @@ from app.mw.maintenance import MaintenanceMiddleware
 from app.config import settings, register_reload_hook
 from app import storage
 # bot.py, в main() после создания bot и dp
-from app import scheduler
+from app import scheduler, runtime
 
 
 # Routers (подключаем команды и меню раньше, чат — последним)
@@ -33,10 +33,7 @@ try:
 except Exception:
     SubscriptionGateMiddleware = None  # опционально
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-)
+runtime.setup_logging()
 
 
 async def _set_bot_commands(bot: Bot) -> None:

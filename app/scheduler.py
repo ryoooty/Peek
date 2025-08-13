@@ -6,7 +6,7 @@ import random
 from typing import Optional, Dict, List
 
 from aiogram import Bot
-from app import storage
+from app import storage, runtime
 from app.config import settings
 
 # APScheduler — опционально (без SQLAlchemyJobStore, чтобы не требовать SQLAlchemy)
@@ -53,6 +53,7 @@ def init(bot: Bot) -> None:
 
     _scheduler = AsyncIOScheduler(timezone=dt.timezone.utc)
     _scheduler.start()
+    runtime.set_scheduler(_scheduler)
 
     # Ежеминутный тик на случай подвисших/забытых пользователей:
     # Если у юзера включён Live и нет будущих джоб — создадим суточный план.

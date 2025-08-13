@@ -4,6 +4,7 @@ from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
 
+from app import runtime, storage
 from app.config import reload_settings, settings
 from app.scheduler import rebuild_user_jobs
 
@@ -40,3 +41,41 @@ async def cmd_maintenance(msg: Message):
         await msg.answer(f"Maintenance переключён: {'ON' if settings.maintenance_mode else 'OFF'}")
     else:
         await msg.answer("Используйте: /maintenance on|off")
+
+
+@router.message(Command("diag"))
+async def cmd_diag(msg: Message):
+    if msg.from_user.id not in settings.admin_ids:
+        return
+    scheduler = runtime.get_scheduler()
+    job_ids: list[str] = []
+    if scheduler:
+        try:
+            job_ids = [j.id or "" for j in scheduler.get_jobs()]
+        except Exception:
+            pass
+    gate_state = "ON" if settings.sub_channel_id else "OFF"
+    err_counts = runtime.get_error_counts()
+    err_text = ", ".join(f"{k}={v}" for k, v in err_counts.items()) or "—"
+    text = (
+        f"Config v{settings.config_version}\n"
+        f"Jobs ({len(job_ids)}): {', '.join(job_ids) if job_ids else '—'}\n"
+        f"Sub gate: {gate_state}\n"
+        f"Errors: {err_text}"
+    )
+    await msg.answer(text)
+
+
+@router.message(Command("health"))
+async def cmd_health(msg: Message):
+    if msg.from_user.id not in settings.admin_ids:
+        return
+    tables = ["users", "characters", "chats", "messages"]
+    try:
+        for t in tables:
+            storage._q(f"SELECT 1 FROM {t} LIMIT 1")
+    except Exception as e:
+        runtime.incr_error("db")
+        await msg.answer(f"DB error: {e}")
+        return
+    await msg.answer("OK")
