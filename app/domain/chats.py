@@ -53,7 +53,11 @@ def _billable_tokens(model: str, usage_in: int, usage_out: int) -> int:
     t = settings.model_tariffs.get(model) or settings.model_tariffs.get(settings.default_model)
     if not t:
         return usage_in + usage_out
-    units = (usage_in * t.input_per_1k + usage_out * t.output_per_1k) / 1000.0
+    units = (
+        usage_in * t.input_per_1k
+        + usage_out * t.output_per_1k
+        + (usage_in + usage_out) * t.cache_per_1k
+    ) / 1000.0
     return max(1, int(math.ceil(units)))
 
 
@@ -102,12 +106,14 @@ async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
         timeout_s=settings.limits.request_timeout_seconds,
     )
     out_text = _safe_trim(r.text, char_limit)
-
-    billed, deficit = _apply_billing(user_id, model, int(r.usage_in or 0), int(r.usage_out or 0))
+    usage_in = int(r.usage_in or 0)
+    usage_out = int(r.usage_out or 0)
+    storage.add_cache_tokens(user_id, usage_in + usage_out)
+    billed, deficit = _apply_billing(user_id, model, usage_in, usage_out)
     return ChatReply(
         text=out_text,
-        usage_in=int(r.usage_in or 0),
-        usage_out=int(r.usage_out or 0),
+        usage_in=usage_in,
+        usage_out=usage_out,
         billed=billed,
         deficit=deficit,
     )
@@ -138,6 +144,7 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[D
         elif ev.get("type") == "usage":
             usage_in = int(ev.get("in") or 0)
             usage_out = int(ev.get("out") or 0)
+            storage.add_cache_tokens(user_id, usage_in + usage_out)
             billed, deficit = _apply_billing(user_id, model, usage_in, usage_out)
             yield {
                 "kind": "final",
