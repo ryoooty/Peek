@@ -191,6 +191,23 @@ def _migrate() -> None:
     )"""
     )
 
+    # usage ledger
+    _exec(
+        """
+    CREATE TABLE IF NOT EXISTS usage_ledger (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id     INTEGER NOT NULL,
+        model       TEXT NOT NULL,
+        usage_in    INTEGER,
+        usage_out   INTEGER,
+        price_in    REAL,
+        price_out   REAL,
+        price_cache REAL,
+        total       REAL,
+        created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+    )"""
+    )
+
 
 # ------------- Users -------------
 def ensure_user(user_id: int, username: Optional[str] = None, *, default_tz_min: int = 180) -> None:
@@ -569,6 +586,40 @@ def spend_tokens(user_id: int, amount: int) -> Tuple[int, int, int]:
 def nightly_bonus_toki(user_id: int, amount: int) -> None:
     today = datetime.utcnow().strftime("%Y-%m-%d")
     add_toki(user_id, amount, meta=f"nightly:{today}")
+
+
+# ------------- Usage ledger -------------
+def log_usage(
+    user_id: int,
+    model: str,
+    usage_in: int,
+    usage_out: int,
+    price_in: float,
+    price_out: float,
+    price_cache: float,
+    total: float,
+) -> None:
+    _exec(
+        "INSERT INTO usage_ledger(user_id,model,usage_in,usage_out,price_in,price_out,price_cache,total) VALUES (?,?,?,?,?,?,?,?)",
+        (
+            user_id,
+            model,
+            usage_in,
+            usage_out,
+            float(price_in),
+            float(price_out),
+            float(price_cache),
+            float(total),
+        ),
+    )
+
+
+def total_usage_cost(user_id: int) -> float:
+    r = _q(
+        "SELECT SUM(total) as s FROM usage_ledger WHERE user_id=?",
+        (user_id,),
+    ).fetchone()
+    return float(r["s"] or 0.0)
 
 
 # ------------- Proactive helpers -------------

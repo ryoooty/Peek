@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import AsyncGenerator, Dict, List, Tuple
 
 from app import storage
+from app.billing.pricing import calc_usage_cost
 from app.config import settings
 from app.character import get_system_prompt_for_chat
 from app.providers.deepseek_openai import chat as provider_chat, stream_chat as provider_stream
@@ -54,6 +55,17 @@ def _billable_tokens(model: str, usage_in: int, usage_out: int) -> int:
 def _apply_billing(user_id: int, model: str, usage_in: int, usage_out: int) -> Tuple[int, int]:
     """Возвращает (billed, deficit)."""
     billed = _billable_tokens(model, usage_in, usage_out)
+    price_in, price_out, price_cache, total = calc_usage_cost(model, usage_in, usage_out)
+    storage.log_usage(
+        user_id,
+        model,
+        usage_in,
+        usage_out,
+        price_in,
+        price_out,
+        price_cache,
+        total,
+    )
     spent_free, spent_paid, deficit = storage.spend_tokens(user_id, billed)
     if deficit > 0:
         # токенов не хватило — всё равно считаем списание на максимум и сообщаем дефицит

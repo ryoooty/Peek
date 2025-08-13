@@ -6,6 +6,7 @@ from typing import Optional
 from aiogram import Bot
 
 from app import storage
+from app.billing.pricing import calc_usage_cost
 from app.config import settings
 from app.character import LIVE_STYLE
 from app.providers.deepseek_openai import chat as provider_chat
@@ -87,7 +88,20 @@ async def proactive_nudge(*, bot: Bot, user_id: int, chat_id: int) -> Optional[s
             storage.spend_tokens(user_id, cost)
 
     # Сохраняем и отправляем
-    storage.add_message(chat_id, is_user=False, content=text, usage_in=int(r.usage_in or 0), usage_out=int(r.usage_out or 0))
+    usage_in = int(r.usage_in or 0)
+    usage_out = int(r.usage_out or 0)
+    price_in, price_out, price_cache, total = calc_usage_cost(model, usage_in, usage_out)
+    storage.log_usage(
+        user_id,
+        model,
+        usage_in,
+        usage_out,
+        price_in,
+        price_out,
+        price_cache,
+        total,
+    )
+    storage.add_message(chat_id, is_user=False, content=text, usage_in=usage_in, usage_out=usage_out)
     storage.log_proactive(user_id, chat_id, int(chat["char_id"]), kind)
     try:
         await bot.send_message(chat_id=user_id, text=text)
