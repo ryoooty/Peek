@@ -109,11 +109,3 @@ async def to_profile(msg: Message):
     from app.handlers.profile import show_profile
     await show_profile(msg)
 
-
-@router.message(F.text == "💰 Баланс")
-async def to_balance(msg: Message):
-    from app.handlers.balance import cmd_balance
-
-    # Use the balance handler's command directly instead of
-    # constructing a fake callback query object.
-    await cmd_balance(msg)

@@ -10,6 +10,7 @@ from app.utils.tz import tz_keyboard
 
 from app import storage
 from app.config import settings
+from app.handlers.balance import _balance_text
 
 router = Router(name="profile")
 
@@ -77,19 +78,12 @@ async def cb_model(call: CallbackQuery):
 
 @router.callback_query(F.data == "prof:balance")
 async def cb_balance(call: CallbackQuery):
-    u = storage.get_user(call.from_user.id) or {}
-    text = (
-        "Баланс:\n"
-        f"Токи (free): <b>{u.get('free_toki') or 0}</b>\n"
-        f"Токены (paid): <b>{u.get('paid_tokens') or 0}</b>\n"
-        f"Кэш-токены: <b>{u.get('cache_tokens') or 0}</b>\n\n"
-        "Пополнение — через /pay (после подтверждения токены будут зачислены)."
-    )
     kb = InlineKeyboardBuilder()
     kb.button(text="⬅ Назад", callback_data="prof:back")
     kb.adjust(1)
-    await call.message.edit_text(text, reply_markup=kb.as_markup())
+    await call.message.edit_text(_balance_text(call.from_user.id), reply_markup=kb.as_markup())
     await call.answer()
+
 
 
 @router.callback_query(F.data == "prof:sub")
