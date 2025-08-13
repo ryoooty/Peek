@@ -191,6 +191,18 @@ def _migrate() -> None:
     )"""
     )
 
+    _exec(
+        """
+    CREATE TABLE IF NOT EXISTS transactions (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        topup_id    INTEGER,
+        user_id     INTEGER NOT NULL,
+        amount      REAL NOT NULL,
+        provider    TEXT,
+        created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+    )"""
+    )
+
 
 # ------------- Users -------------
 def ensure_user(user_id: int, username: Optional[str] = None, *, default_tz_min: int = 180) -> None:
@@ -601,15 +613,30 @@ def create_topup_pending(user_id: int, amount: float, provider: str) -> int:
     return int(cur.lastrowid)
 
 
+def create_transaction(topup_id: int, user_id: int, amount: float, provider: str) -> int:
+    cur = _exec(
+        "INSERT INTO transactions(topup_id, user_id, amount, provider) VALUES (?,?,?,?)",
+        (topup_id, user_id, float(amount), provider),
+    )
+    return int(cur.lastrowid)
+
+
 def approve_topup(topup_id: int, admin_id: int) -> bool:
-    r = _q("SELECT user_id, amount, status FROM topups WHERE id=?", (topup_id,)).fetchone()
+    r = _q(
+        "SELECT user_id, amount, status, provider FROM topups WHERE id=?",
+        (topup_id,),
+    ).fetchone()
     if not r or r["status"] != "pending":
         return False
     _exec(
         "UPDATE topups SET status='approved', approved_by=?, approved_at=CURRENT_TIMESTAMP WHERE id=?",
         (admin_id, topup_id),
     )
-    add_paid_tokens(int(r["user_id"]), int(float(r["amount"]) * 1000))  # пример: 1 у.е. = 1000 токенов
+    uid = int(r["user_id"])
+    amt = float(r["amount"])
+    prov = str(r["provider"] or "")
+    add_paid_tokens(uid, int(amt * 1000))  # пример: 1 у.е. = 1000 токенов
+    create_transaction(topup_id, uid, amt, prov)
     return True
 
 
