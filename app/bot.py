@@ -11,6 +11,8 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand
 from app.mw.maintenance import MaintenanceMiddleware
+from app.mw.ban import BanMiddleware
+from app.mw.rate_limit import RateLimitLLM
 from app.config import settings, register_reload_hook
 from app import storage
 # bot.py, в main() после создания bot и dp
@@ -60,6 +62,8 @@ async def main():
     # Middlewares (внешние)
     dp.update.outer_middleware(MaintenanceMiddleware())
     dp.update.outer_middleware(SubscriptionGateMiddleware())
+    dp.update.outer_middleware(BanMiddleware())
+    dp.update.outer_middleware(RateLimitLLM())
 
     # Подключаем роутеры. ВАЖНО: «chats» — ПОСЛЕДНИЙ, чтобы не перехватывать slash-команды.
     dp.include_router(admin_handlers.router)

@@ -1,8 +1,7 @@
-import types
 import sys
+import types
+import asyncio
 from pathlib import Path
-
-import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -26,7 +25,7 @@ class DummyCall:
         self.from_user = types.SimpleNamespace(id=user_id)
         self.message = DummyMessage(user_id)
 
-    async def answer(self, *args, **kwargs):  # pragma: no cover - nothing to return
+    async def answer(self, *args, **kwargs):
         pass
 
 
@@ -38,6 +37,7 @@ def test_cb_open_balance_sends_new_message(tmp_path):
 
     asyncio.run(cb_open_balance(call))
     assert call.message.sent and "Баланс" in call.message.sent[0]
+    assert "Кэш‑токены" in call.message.sent[0]
 
 
 def test_cmd_balance_sends_new_message(tmp_path):
@@ -48,4 +48,6 @@ def test_cmd_balance_sends_new_message(tmp_path):
 
     asyncio.run(cmd_balance(msg))
     assert msg.sent and "Баланс" in msg.sent[0]
+    assert "Кэш‑токены" in msg.sent[0]
+
 

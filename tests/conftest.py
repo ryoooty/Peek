@@ -1,3 +1,4 @@
+
 import sys
 import types
 
@@ -93,3 +94,4 @@ keyboard.InlineKeyboardBuilder = InlineKeyboardBuilder
 sys.modules.setdefault("aiogram.utils.keyboard", keyboard)
 
 # (app.config and other modules are stubbed within individual tests as needed)
+

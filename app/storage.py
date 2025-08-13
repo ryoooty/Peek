@@ -6,6 +6,8 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from app.config import settings
+
 
 sqlite3.register_adapter(bool, int)
 sqlite3.register_converter("BOOLEAN", lambda v: bool(int(v)))
@@ -391,10 +393,6 @@ def set_character_prompts(
 
 def set_character_photo_path(char_id: int, file_path: str) -> None:
     _exec("UPDATE characters SET photo_path=? WHERE id=?", (file_path, char_id))
-
-
-def set_character_photo(char_id: int, file_id: str | None) -> None:
-    _exec("UPDATE characters SET photo_id=? WHERE id=?", (file_id, char_id))
 
 
 def set_character_photo(char_id: int, file_id: str | None) -> None:
@@ -822,20 +820,6 @@ def nightly_bonus_toki(user_id: int, amount: int) -> None:
     add_toki(user_id, amount, meta=f"nightly:{today}")
 
 
-def daily_bonus_free_users() -> List[int]:
-    today = datetime.utcnow().strftime("%Y-%m-%d")
-    amount = int(settings.nightly_toki_bonus.get("free") or 0)
-    rows = _q(
-        "SELECT tg_id FROM users WHERE subscription='free' AND (last_bonus_date IS NULL OR last_bonus_date<>?)",
-        (today,),
-    ).fetchall()
-    for r in rows:
-        uid = int(r["tg_id"])
-        add_toki(uid, amount, meta=f"daily:{today}")
-        _exec("UPDATE users SET last_bonus_date=? WHERE tg_id=?", (today, uid))
-    return [int(r["tg_id"]) for r in rows]
-
-
 def get_toki_log(user_id: int, limit: int = 10) -> List[Dict[str, Any]]:
     rows = _q(
         "SELECT amount, meta, created_at FROM toki_log WHERE user_id=? ORDER BY id DESC LIMIT ?",
@@ -844,10 +828,10 @@ def get_toki_log(user_id: int, limit: int = 10) -> List[Dict[str, Any]]:
     return [dict(r) for r in rows]
 
 
-def daily_bonus_free_users() -> int:
+def daily_bonus_free_users() -> List[int]:
     amount = int(settings.subs.nightly_toki_bonus.get("free", 0))
     if amount <= 0:
-        return 0
+        return []
     rows = _q(
         """
         SELECT tg_id FROM users
@@ -856,7 +840,7 @@ def daily_bonus_free_users() -> int:
         """
     ).fetchall()
     today = datetime.utcnow().strftime("%Y-%m-%d")
-    count = 0
+    uids: List[int] = []
     for r in rows:
         uid = int(r["tg_id"])
         add_toki(uid, amount, meta=f"daily:{today}")
@@ -864,8 +848,8 @@ def daily_bonus_free_users() -> int:
             "UPDATE users SET last_daily_bonus_at=CURRENT_TIMESTAMP WHERE tg_id=?",
             (uid,),
         )
-        count += 1
-    return count
+        uids.append(uid)
+    return uids
 
 
 # ------------- Proactive helpers -------------

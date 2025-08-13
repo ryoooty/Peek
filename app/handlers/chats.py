@@ -315,6 +315,7 @@ async def chatting_text(msg: Message):
                                 # ответ в live завершён — теперь стартуем таймер «10 минут тишины»
 
                     schedule_silence_check(msg.from_user.id, chat_id, delay_sec=600)
+
         else:
             # RP: один ответ
             r = await chat_turn(msg.from_user.id, chat_id, msg.text)
