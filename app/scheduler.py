@@ -78,6 +78,35 @@ def schedule_silence_check(user_id: int, chat_id: int, delay_sec: int = 600) -> 
     _add_job(jid, "date", run_date=run_at, func=_on_silence, args=(user_id, chat_id))
 
 
+def rebuild_user_jobs(user_id: int) -> None:
+    """Пересобрать суточный план Live для указанного пользователя.
+
+    Удаляет все существующие джобы пользователя (nudge и silence) и,
+    если режим Live включён, создаёт новый дневной план.
+    """
+    if not _scheduler:
+        return
+
+    # удалить старые джобы пользователя
+    try:
+        for j in list(_scheduler.get_jobs()):  # type: ignore
+            if not j.id:
+                continue
+            if j.id.startswith(f"nudge:{user_id}:") or j.id.startswith(f"silence:{user_id}:"):
+                try:
+                    _scheduler.remove_job(j.id)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    _user_jobs.pop(user_id, None)
+
+    # если Live включён — пересоздать план
+    u = storage.get_user(user_id) or {}
+    if int(u.get("proactive_enabled") or 0) == 1:
+        _plan_daily(user_id)
+
+
 # ---------------- Internal helpers/jobs ----------------
 
 def _add_job(job_id: str, trigger: str, **kw) -> None:
