@@ -400,6 +400,7 @@ def set_character_photo(char_id: int, file_id: str | None) -> None:
     _exec("UPDATE characters SET photo_id=? WHERE id=?", (file_id, char_id))
 
 
+
 def toggle_fav_char(
     user_id: int, char_id: int, *, allow_max: int | None = None
 ) -> bool:
