@@ -592,6 +592,14 @@ def log_proactive(user_id: int, chat_id: int, char_id: int, kind: str = "regular
     _exec("UPDATE users SET last_proactive_at=CURRENT_TIMESTAMP WHERE tg_id=?", (user_id,))
 
 
+def select_proactive_candidates() -> List[int]:
+    """Вернуть список пользователей с включённым Live."""
+    rows = _q(
+        "SELECT tg_id FROM users WHERE proactive_enabled=1",
+    ).fetchall()
+    return [int(r["tg_id"]) for r in rows]
+
+
 # ------------- Payments -------------
 def create_topup_pending(user_id: int, amount: float, provider: str) -> int:
     cur = _exec(

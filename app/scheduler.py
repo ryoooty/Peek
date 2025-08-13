@@ -9,11 +9,13 @@ from aiogram import Bot
 from app import storage
 from app.config import settings
 
-# APScheduler — опционально (без SQLAlchemyJobStore, чтобы не требовать SQLAlchemy)
-try:
+# APScheduler (SQLAlchemyJobStore по возможности)
+try:  # pragma: no cover - зависит от окружения
     from apscheduler.schedulers.asyncio import AsyncIOScheduler  # type: ignore
-except Exception:
+    from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore  # type: ignore
+except Exception:  # pragma: no cover
     AsyncIOScheduler = None  # type: ignore
+    SQLAlchemyJobStore = None  # type: ignore
 
 """
 ЛОГИКА (без «окон»):
@@ -51,12 +53,27 @@ def init(bot: Bot) -> None:
         # APScheduler не установлен — тихо деградируем
         return
 
-    _scheduler = AsyncIOScheduler(timezone=dt.timezone.utc)
+    kw = {"timezone": dt.timezone.utc}
+    if settings.apscheduler_persist and SQLAlchemyJobStore:
+        kw["jobstores"] = {
+            "default": SQLAlchemyJobStore(url=f"sqlite:///{settings.jobs_db_path}")
+        }
+    _scheduler = AsyncIOScheduler(**kw)
     _scheduler.start()
+
+    if settings.apscheduler_persist:
+        _cleanup_old_jobs()
 
     # Ежеминутный тик на случай подвисших/забытых пользователей:
     # Если у юзера включён Live и нет будущих джоб — создадим суточный план.
     _add_job("proactive:tick", "interval", minutes=1, func=_tick_fill_plans)
+
+    # Стартовые джобы «окон» для всех кандидатов
+    try:
+        for uid in storage.select_proactive_candidates():
+            schedule_window_jobs_for_user(uid)
+    except Exception:
+        pass
 
 
 def shutdown() -> None:
@@ -78,16 +95,87 @@ def schedule_silence_check(user_id: int, chat_id: int, delay_sec: int = 600) -> 
     _add_job(jid, "date", run_date=run_at, func=_on_silence, args=(user_id, chat_id))
 
 
-# ---------------- Internal helpers/jobs ----------------
+def schedule_window_jobs_for_user(user_id: int) -> None:
+    """Поставить джобы начала и конца окна (UTC)."""
+    if not _scheduler:
+        return
+    u = storage.get_user(user_id) or {}
+    if int(u.get("proactive_enabled") or 0) != 1:
+        return
+    win = str(u.get("pro_window_utc") or "06:00-18:00")
+    try:
+        s, e = win.split("-")
+        sh, sm = _parse_hhmm(s)
+        eh, em = _parse_hhmm(e)
+    except Exception:
+        return
+    now = dt.datetime.now(dt.timezone.utc)
+    for shift in (0, 1):
+        start_dt = now.replace(hour=sh, minute=sm, second=0, microsecond=0) + dt.timedelta(days=shift)
+        end_dt = now.replace(hour=eh, minute=em, second=0, microsecond=0) + dt.timedelta(days=shift)
+        _add_job(
+            f"window_start:{user_id}:{shift}",
+            "date",
+            run_date=start_dt,
+            func=_on_window_event,
+            args=(user_id, "window_start"),
+            replace_existing=True,
+        )
+        _add_job(
+            f"window_end:{user_id}:{shift}",
+            "date",
+            run_date=end_dt,
+            func=_on_window_event,
+            args=(user_id, "window_end"),
+            replace_existing=True,
+        )
 
-def _add_job(job_id: str, trigger: str, **kw) -> None:
+
+def rebuild_user_jobs(user_id: int) -> None:
+    """Пересобрать оконные джобы пользователя."""
     if not _scheduler:
         return
     try:
-        _scheduler.add_job(id=job_id, trigger=trigger, replace_existing=False, **kw)  # type: ignore
+        for j in list(_scheduler.get_jobs()):  # type: ignore
+            if not j.id:
+                continue
+            if j.id.startswith(f"window_start:{user_id}:") or j.id.startswith(
+                f"window_end:{user_id}:"
+            ):
+                _scheduler.remove_job(j.id)
+    except Exception:
+        pass
+    schedule_window_jobs_for_user(user_id)
+
+
+# ---------------- Internal helpers/jobs ----------------
+
+def _add_job(job_id: str, trigger: str, *, replace_existing: bool = False, **kw) -> None:
+    if not _scheduler:
+        return
+    try:
+        _scheduler.add_job(  # type: ignore
+            id=job_id, trigger=trigger, replace_existing=replace_existing, **kw
+        )
     except Exception:
         # не критично
         pass
+
+
+def _cleanup_old_jobs() -> None:
+    if not _scheduler:
+        return
+    now = dt.datetime.utcnow()
+    try:
+        for j in list(_scheduler.get_jobs()):  # type: ignore
+            if j.next_run_time and j.next_run_time < now:
+                _scheduler.remove_job(j.id)
+    except Exception:
+        pass
+
+
+def _parse_hhmm(s: str) -> tuple[int, int]:
+    return int(s[:2]), int(s[3:5])
 
 
 def _now_ts() -> int:
@@ -163,12 +251,9 @@ async def _tick_fill_plans():
     """
     if not _scheduler:
         return
-    rows = storage._q("SELECT tg_id, proactive_enabled FROM users").fetchall()
+    uids = storage.select_proactive_candidates()
     now = _now_ts()
-    for r in rows:
-        uid = int(r["tg_id"])
-        if int(r["proactive_enabled"] or 0) != 1:
-            continue
+    for uid in uids:
         # есть ли хотя бы одна наша джоба для пользователя в будущем?
         has_future = False
         for j in _scheduler.get_jobs():  # type: ignore
@@ -232,6 +317,16 @@ async def _on_silence(user_id: int, chat_id: int):
 
     # создаём новый суточный план
     _plan_daily(user_id)
+
+
+async def _on_window_event(user_id: int, reason: str) -> None:
+    """Срабатывание окна (start/end). Просто пробуем отправить нудж."""
+    last_chat = _get_last_chat_id(user_id)
+    if not last_chat:
+        return
+    await _try_send_nudge(user_id, last_chat)
+    # поддерживаем расписание вперёд
+    schedule_window_jobs_for_user(user_id)
 
 
 async def _on_nudge_due(user_id: int):
