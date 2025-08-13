@@ -1,16 +1,17 @@
 # app/profile.py
 from __future__ import annotations
 
+
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from app.utils.tz import tz_keyboard
-
 from app import storage
 from app.config import settings
-from app.handlers.balance import _balance_text
+from app.scheduler import rebuild_user_jobs
+
+
 
 router = Router(name="profile")
 
@@ -163,6 +164,7 @@ async def cb_set_live_toggle(call: CallbackQuery):
     u = storage.get_user(call.from_user.id) or {}
     live_on = 0 if (u.get("proactive_enabled") or 0) else 1
     storage.set_user_field(call.from_user.id, "proactive_enabled", live_on)
+    rebuild_user_jobs(call.from_user.id)
     # Сейчас окно не используется планировщиком, но оставим UI — совместимость.
     await cb_set_live(call)
 
@@ -178,6 +180,7 @@ async def cb_set_live_per(call: CallbackQuery):
     except ValueError:
         nxt = 2
     storage.set_user_field(call.from_user.id, "pro_per_day", nxt)
+    rebuild_user_jobs(call.from_user.id)
     await cb_set_live(call)
 
 
@@ -198,6 +201,7 @@ async def cb_set_live_win(call: CallbackQuery):
         da, db = parse(a) - tz, parse(b) - tz
         return f"{fmt(da)}-{fmt(db)}"
     storage.set_user_field(call.from_user.id, "pro_window_utc", _to_utc(nxt))
+    rebuild_user_jobs(call.from_user.id)
     await cb_set_live(call)
 
 
@@ -206,26 +210,17 @@ async def cb_set_live_gap(call: CallbackQuery):
     u = storage.get_user(call.from_user.id) or {}
     val = int(u.get("pro_min_gap_min") or 10)
     cycle = [5, 10, 15, 30, 60, 120]
+
+    
     try:
         nxt = cycle[(cycle.index(val) + 1) % len(cycle)]
     except ValueError:
         nxt = 10
     storage.set_user_field(call.from_user.id, "pro_min_gap_min", nxt)
-    storage.set_user_field(call.from_user.id, "pro_min_delay_min", nxt)
+    rebuild_user_jobs(call.from_user.id)
     await cb_set_live(call)
 
-
-@router.callback_query(F.data == "set:live:max")
-async def cb_set_live_max(call: CallbackQuery):
-    u = storage.get_user(call.from_user.id) or {}
-    val = int(u.get("pro_max_delay_min") or 720)
-    cycle = [60, 120, 180, 240, 360, 720, 1440]
-    try:
-        nxt = cycle[(cycle.index(val) + 1) % len(cycle)]
-    except ValueError:
-        nxt = 720
-    storage.set_user_field(call.from_user.id, "pro_max_delay_min", nxt)
-    await cb_set_live(call)
+    
 
 
 # ---- Другие настройки (оставлены) ----
