@@ -86,6 +86,7 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO")
     config_version: int = Field(default=1)
 
+
     # Provider
     deepseek_api_key: Optional[str] = None
     deepseek_base_url: str = "https://api.openai.com"
@@ -97,6 +98,10 @@ class Settings(BaseSettings):
 
     # Maintenance
     maintenance_mode: bool = False
+
+    # Payments
+    boosty_secret: Optional[str] = None
+    donationalerts_secret: Optional[str] = None
 
     # APScheduler (persistent jobstore по желанию)
     apscheduler_persist: bool = False
@@ -133,6 +138,7 @@ class Settings(BaseSettings):
     global_typing_enabled: bool = True
 
 settings = Settings()
+config_version = 1
 
 
 # --------- Reload helpers ---------
@@ -186,6 +192,7 @@ def _apply_overrides(dst: Settings, overrides: Dict[str, Any]) -> None:
 
 
 def reload_settings() -> Settings:
+    global config_version
     # перечитать ENV
     new = Settings()
     # подтянуть YAML/JSON
@@ -194,6 +201,7 @@ def reload_settings() -> Settings:
     # применить inplace
     for k, v in new.model_dump().items():
         setattr(settings, k, v)
+    config_version += 1
     # нотифицировать хуки
     for fn in list(_ReloadHooks):
         try:

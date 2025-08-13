@@ -6,6 +6,7 @@ from aiogram.types import Message
 
 from app import runtime, storage
 from app.config import reload_settings, settings
+
 from app.scheduler import rebuild_user_jobs
 
 router = Router(name="system")
@@ -62,6 +63,8 @@ async def cmd_diag(msg: Message):
         f"Jobs ({len(job_ids)}): {', '.join(job_ids) if job_ids else '—'}\n"
         f"Sub gate: {gate_state}\n"
         f"Errors: {err_text}"
+
+
     )
     await msg.answer(text)
 
@@ -79,3 +82,4 @@ async def cmd_health(msg: Message):
         await msg.answer(f"DB error: {e}")
         return
     await msg.answer("OK")
+

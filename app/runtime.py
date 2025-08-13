@@ -43,3 +43,4 @@ def set_scheduler(s: AsyncIOScheduler) -> None:
 
 def get_scheduler() -> Optional[AsyncIOScheduler]:
     return _scheduler
+
