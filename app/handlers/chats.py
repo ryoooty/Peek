@@ -277,41 +277,57 @@ async def chatting_text(msg: Message):
     try:
         mode = (last.get("mode") or "rp").lower()
 
+
         if mode == "live":
             full = ""
             buf = ""
+            min_first = 120
+            max_chars = 800
 
             async for ev in live_stream(msg.from_user.id, chat_id, msg.text):
                 if ev["kind"] == "chunk":
                     buf += ev["text"]
-                    pieces, buf = _extract_sections(buf)
-                    for piece in pieces:
-                        if piece:
-                            await msg.answer(piece)
-                            full += (("\n" if full else "") + piece)
+                    piece, buf = _try_slice(buf, min_first=min_first, max_chars=max_chars)
+                    if piece and piece.strip():
+                        await msg.answer(piece)
+                        full += (("\n" if full else "") + piece)
                 elif ev["kind"] == "final":
-                    buf += ev.get("text", "")
-                    pieces, _ = _extract_sections(buf)
-                    for piece in pieces:
-                        if piece:
-                            await msg.answer(piece)
-                            full += (("\n" if full else "") + piece)
+                    if buf.strip():
+                        await msg.answer(buf.strip())
+                        full += (("\n" if full else "") + buf.strip())
                     usage_in = int(ev.get("usage_in") or 0)
                     usage_out = int(ev.get("usage_out") or 0)
-                    clean_full = full.replace("/s/", "").replace("/n/", "")
-                    storage.add_message(chat_id, is_user=False, content=clean_full, usage_in=usage_in, usage_out=usage_out)
+                    cost_total = float(ev.get("cost_total") or 0)
+                    storage.add_message(
+                        chat_id,
+                        is_user=False,
+                        content=full,
+                        usage_in=usage_in,
+                        usage_out=usage_out,
+                        usage_cost_rub=cost_total,
+                    )
                     if int(ev.get("deficit") or 0) > 0:
                         await msg.answer("⚠ Баланс токенов на нуле. Пополните баланс, чтобы продолжить комфортно.")
+                                # ответ в live завершён — теперь стартуем таймер «10 минут тишины»
+
                     schedule_silence_check(msg.from_user.id, chat_id, delay_sec=600)
         else:
             # RP: один ответ
             r = await chat_turn(msg.from_user.id, chat_id, msg.text)
-            clean_resp = r.text.replace("/s/", "").replace("/n/", "")
-            storage.add_message(chat_id, is_user=False, content=clean_resp, usage_in=r.usage_in, usage_out=r.usage_out)
-            await msg.answer(clean_resp)
+
+            storage.add_message(
+                chat_id,
+                is_user=False,
+                content=r.text,
+                usage_in=r.usage_in,
+                usage_out=r.usage_out,
+                usage_cost_rub=r.cost_total,
+            )
+            await msg.answer(r.text)
             if r.deficit > 0:
                 await msg.answer("⚠ Баланс токенов на нуле. Пополните баланс, чтобы продолжить комфортно.")
             schedule_silence_check(msg.from_user.id, chat_id, delay_sec=600)
+
     finally:
         stop.set()
         try:
