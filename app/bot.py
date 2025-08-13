@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 
 from aiogram import Bot, Dispatcher
+
 from aiogram.client.default import DefaultBotProperties
 
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -18,6 +19,7 @@ from app.config import settings, register_reload_hook
 from app import storage
 # bot.py, в main() после создания bot и dp
 from app import scheduler
+
 
 
 # Routers (подключаем команды и меню раньше, чат — последним)
@@ -70,11 +72,13 @@ async def main():
 
     # Middlewares (внешние)
 
+
     dp.update.outer_middleware(MaintenanceMiddleware())
     if SubscriptionGateMiddleware:
         dp.update.outer_middleware(SubscriptionGateMiddleware())
     dp.update.outer_middleware(BanMiddleware())
     dp.update.outer_middleware(RateLimitLLM())
+
     # Подключаем роутеры. ВАЖНО: «chats» — ПОСЛЕДНИЙ, чтобы не перехватывать slash-команды.
     dp.include_router(admin_handlers.router) 
     dp.include_router(user_handlers.router)        # /start, главное меню
