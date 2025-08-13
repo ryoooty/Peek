@@ -53,7 +53,7 @@ async def main():
     # БД и бота
     storage.init(settings.db_path)
     bot = Bot(token=settings.bot_token, default=DefaultBotProperties(parse_mode="HTML"))
-    dp = Dispatcher()
+    dp = Dispatcher(storage=MemoryStorage())
 
     # Middlewares (внешние)
     dp.update.outer_middleware(MaintenanceMiddleware())
