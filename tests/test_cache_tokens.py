@@ -30,6 +30,7 @@ class DummySettings:
         self.limits = DummyLimits()
         self.deepseek_base_url = ""
         self.deepseek_api_key = None
+        self.toki_spend_coeff = 1.0
 
 
 

@@ -2,8 +2,9 @@ config_version: 1
 log_level: INFO
 default_model: deepseek-chat
 model_tariffs:
-  deepseek-chat: {input_per_1k: 1.0, output_per_1k: 1.0, cache_per_1k: 0.5}
-  deepseek-reasoner: {input_per_1k: 2.0, output_per_1k: 2.0, cache_per_1k: 1.0}
+  deepseek-chat: {input_per_1k: 14, output_per_1k: 110, cache_per_1k: 7}
+  deepseek-reasoner: {input_per_1k: 55, output_per_1k: 219, cache_per_1k: 14}
+toki_spend_coeff: 1.0
 subs:
   free:   {chats_page_size: 10, chats_pages_max: 2, chars_page_size: 10, chars_pages_max: 2, fav_chats_max: 5, fav_chars_max: 10}
   silver: {chats_pages_max: 4, chars_pages_max: 4, fav_chats_max: 10, fav_chars_max: 20}
