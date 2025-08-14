@@ -30,6 +30,7 @@ class DummySettings:
         self.limits = DummyLimits()
         self.deepseek_base_url = ""
         self.deepseek_api_key = None
+        self.toki_spend_coeff = 1.0
 
 
 
@@ -108,4 +109,31 @@ def test_live_stream_accumulates_cache_tokens(tmp_path, monkeypatch):
 async def _consume_stream(gen):
     async for _ in gen:
         pass
+
+
+def test_cache_tokens_affect_billing(tmp_path, monkeypatch):
+    storage.init(tmp_path / "bill.db")
+    storage.ensure_user(3, "u")
+    storage.add_toki(3, 100)
+
+    async def _collect_ctx(chat_id, **kwargs):
+        return []
+    monkeypatch.setattr(chats, "_collect_context", _collect_ctx)
+
+    async def noop(*args, **kwargs):
+        return None
+    monkeypatch.setattr(chats, "_maybe_compress_history", noop)
+
+    calls = [(1000, 0), (0, 0)]
+
+    async def fake_chat(*args, **kwargs):
+        inp, out = calls.pop(0)
+        return DummyResp("ok", inp, out)
+
+    monkeypatch.setattr(chats, "provider_chat", fake_chat)
+
+    r1 = asyncio.run(chats.chat_turn(3, 1, "hi"))
+    assert r1.billed == 1
+    r2 = asyncio.run(chats.chat_turn(3, 1, "hi"))
+    assert r2.billed == 1  # billed solely for cached tokens
 
