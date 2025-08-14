@@ -4,6 +4,7 @@ from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject, Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 
 from app.config import settings
+from app.utils.telegram import safe_edit_text
 
 
 class SubscriptionGateMiddleware(BaseMiddleware):
@@ -59,6 +60,7 @@ class SubscriptionGateMiddleware(BaseMiddleware):
         if isinstance(event, Message):
             await event.answer("Подпишитесь на канал, чтобы продолжить.", reply_markup=kb)
         elif isinstance(event, CallbackQuery):
-            await event.message.edit_text("Подпишитесь на канал, чтобы продолжить.", reply_markup=kb)
+            if event.message:
+                await safe_edit_text(event.message, "Подпишитесь на канал, чтобы продолжить.", reply_markup=kb)
             await event.answer()
         return

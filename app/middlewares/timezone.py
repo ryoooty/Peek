@@ -5,6 +5,7 @@ from aiogram.types import TelegramObject, Message, CallbackQuery
 
 from app import storage
 from app.utils.tz import tz_keyboard
+from app.utils.telegram import safe_edit_text
 
 
 class TimezoneMiddleware(BaseMiddleware):
@@ -34,7 +35,7 @@ class TimezoneMiddleware(BaseMiddleware):
                 await event.answer(text, reply_markup=kb)
             elif isinstance(event, CallbackQuery):
                 if event.message:
-                    await event.message.edit_text(text, reply_markup=kb)
+                    await safe_edit_text(event.message, text, reply_markup=kb)
                 await event.answer()
             return
         return await handler(event, data)

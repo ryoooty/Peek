@@ -12,6 +12,7 @@ from app.config import settings
 from app.scheduler import rebuild_user_jobs
 from app.handlers.balance import _balance_text
 from app.utils.tz import tz_keyboard
+from app.utils.telegram import safe_edit_text
 
 
 
@@ -54,15 +55,14 @@ def _profile_kb(u: dict):
     kb = InlineKeyboardBuilder()
     # 1 — модель
     kb.button(text=f"🤖 Модель: {u.get('default_model') or settings.default_model}", callback_data="prof:model")
-    # 2 — баланс/подписка
-    kb.button(text="💰 Баланс", callback_data="prof:balance")
-    kb.button(text="🎫 Подписка", callback_data="prof:sub")
+    # 2 — токи
+    kb.button(text="🪙 Токи", callback_data="prof:balance")
     # 3 — режим общения
     kb.button(text=f"💬 Режим: {u.get('default_chat_mode') or 'rp'}", callback_data="prof:mode")
     # 4 — настройки/инфо
     kb.button(text="⚙ Настройки", callback_data="prof:settings")
     kb.button(text="ℹ Инфо", callback_data="prof:info")
-    kb.adjust(1, 2, 1, 2)
+    kb.adjust(1, 1, 1, 2)
     return kb.as_markup()
 
 
@@ -81,7 +81,7 @@ async def cb_model(call: CallbackQuery):
     nxt = models[(models.index(cur) + 1) % len(models)] if models else cur
     storage.set_user_field(call.from_user.id, "default_model", nxt)
     u = storage.get_user(call.from_user.id) or {}
-    await call.message.edit_text(_profile_text(u), reply_markup=_profile_kb(u))
+    await safe_edit_text(call.message, _profile_text(u), reply_markup=_profile_kb(u))
     await call.answer("Модель обновлена")
 
 
@@ -90,7 +90,7 @@ async def cb_balance(call: CallbackQuery):
     kb = InlineKeyboardBuilder()
     kb.button(text="⬅ Назад", callback_data="prof:back")
     kb.adjust(1)
-    await call.message.edit_text(_balance_text(call.from_user.id), reply_markup=kb.as_markup())
+    await safe_edit_text(call.message, _balance_text(call.from_user.id), reply_markup=kb.as_markup())
     await call.answer()
 
 
@@ -105,7 +105,7 @@ async def cb_sub(call: CallbackQuery):
     kb = InlineKeyboardBuilder()
     kb.button(text="⬅ Назад", callback_data="prof:back")
     kb.adjust(1)
-    await call.message.edit_text(text, reply_markup=kb.as_markup())
+    await safe_edit_text(call.message, text, reply_markup=kb.as_markup())
     await call.answer()
 
 
@@ -115,7 +115,7 @@ async def cb_mode(call: CallbackQuery):
     new_mode = "live" if (u.get("default_chat_mode") or "rp") == "rp" else "rp"
     storage.set_user_field(call.from_user.id, "default_chat_mode", new_mode)
     u = storage.get_user(call.from_user.id) or {}
-    await call.message.edit_text(_profile_text(u), reply_markup=_profile_kb(u))
+    await safe_edit_text(call.message, _profile_text(u), reply_markup=_profile_kb(u))
     await call.answer("Режим обновлён")
 
 
@@ -130,7 +130,7 @@ async def cb_settings(call: CallbackQuery):
     kb.button(text="🌍 Часовой пояс", callback_data="set:tz")
     kb.button(text="⬅ Назад", callback_data="prof:back")
     kb.adjust(1)
-    await call.message.edit_text("Настройки:", reply_markup=kb.as_markup())
+    await safe_edit_text(call.message, "Настройки:", reply_markup=kb.as_markup())
     await call.answer()
 
 
@@ -142,7 +142,7 @@ async def cb_info(call: CallbackQuery):
 @router.callback_query(F.data == "prof:back")
 async def cb_back(call: CallbackQuery):
     u = storage.get_user(call.from_user.id) or {}
-    await call.message.edit_text(_profile_text(u), reply_markup=_profile_kb(u))
+    await safe_edit_text(call.message, _profile_text(u), reply_markup=_profile_kb(u))
     await call.answer()
 
 
@@ -162,9 +162,10 @@ async def cb_set_live(call: CallbackQuery):
     kb.button(text="⬅ Назад", callback_data="prof:settings")
     kb.adjust(1)
 
-    await call.message.edit_text(
+    await safe_edit_text(
+        call.message,
         "Настройка Live:\n— Сообщения по случайным таймингам в течение суток.\n— Можно включить/выключить и настроить частоту.",
-        reply_markup=kb.as_markup()
+        reply_markup=kb.as_markup(),
     )
     await call.answer()
 
@@ -269,8 +270,10 @@ async def cb_set_compress(call: CallbackQuery):
 
 @router.callback_query(F.data == "set:tz")
 async def cb_set_tz(call: CallbackQuery):
-    await call.message.edit_text(
-        "Выберите часовой пояс:", reply_markup=tz_keyboard(prefix="tzprof")
+    await safe_edit_text(
+        call.message,
+        "Выберите часовой пояс:",
+        reply_markup=tz_keyboard(prefix="tzprof"),
     )
     await call.answer()
 
@@ -284,7 +287,7 @@ async def cb_tz_prof(call: CallbackQuery):
         return
     storage.set_user_field(call.from_user.id, "tz_offset_min", offset)
     u = storage.get_user(call.from_user.id) or {}
-    await call.message.edit_text(_profile_text(u), reply_markup=_profile_kb(u))
+    await safe_edit_text(call.message, _profile_text(u), reply_markup=_profile_kb(u))
     await call.answer("Часовой пояс обновлён")
 
 

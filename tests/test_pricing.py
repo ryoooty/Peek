@@ -25,6 +25,7 @@ class DummySettings:
             "deepseek-chat": Tariff(0.6, 0.6, 0.3),
             "deepseek-reasoner": Tariff(1.2, 1.2, 0.6),
         }
+        self.toki_spend_coeff = 1.0
 
 
 config_module = types.ModuleType("config")

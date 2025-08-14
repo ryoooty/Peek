@@ -14,6 +14,7 @@ from app import storage
 from app.config import settings
 from app.domain.chats import chat_turn, live_stream, summarize_chat
 from app.scheduler import schedule_silence_check
+from app.utils.telegram import safe_edit_text
 
 router = Router(name="chats")
 
@@ -52,7 +53,7 @@ async def list_chats(msg_or_call: Message | CallbackQuery, page: int = 1):
     kb = chats_page_kb(user_id, page)
     text = "Ваши чаты:"
     if isinstance(msg_or_call, CallbackQuery):
-        await msg_or_call.message.edit_text(text, reply_markup=kb.as_markup())
+        await safe_edit_text(msg_or_call.message, text, reply_markup=kb.as_markup())
         await msg_or_call.answer()
     else:
         await msg_or_call.answer(text, reply_markup=kb.as_markup())
@@ -83,7 +84,7 @@ def chat_inline_kb(chat_id: int, user_id: int):
     kb.button(text="⬇ Экспорт", callback_data=f"chat:export:{chat_id}")
     kb.button(text="⬆ Импорт", callback_data=f"chat:import:{chat_id}")
     # 4: Меню/Удалить
-    kb.button(text="📋 Меню", callback_data="chars:menu")
+    kb.button(text="⬅ Назад", callback_data="chars:menu")
     kb.button(text="🗑 Удалить", callback_data=f"chat:del:{chat_id}")
     kb.adjust(2, 2, 2, 2)
     return kb
@@ -98,7 +99,7 @@ async def open_chat_inline(msg_or_call: Message | CallbackQuery, *, chat_id: int
     text = f"Чат #{ch['seq_no']} — {ch['char_name']}\nРежим: {ch['mode']}"
     kb = chat_inline_kb(chat_id, ch["user_id"])
     if isinstance(msg_or_call, CallbackQuery):
-        await msg_or_call.message.edit_text(text, reply_markup=kb.as_markup())
+        await safe_edit_text(msg_or_call.message, text, reply_markup=kb.as_markup())
         await msg_or_call.answer()
     else:
         await msg_or_call.answer(text, reply_markup=kb.as_markup())
@@ -126,9 +127,9 @@ async def cb_what(call: CallbackQuery):
         model = (u.get("default_model") or settings.default_model)
 
         s = await summarize_chat(chat_id, model=model)
-        await call.message.edit_text(
+        await safe_edit_text(
+            call.message,
             f"Кратко о чате:\n\n{s.text}",
-
             reply_markup=chat_inline_kb(chat_id, call.from_user.id).as_markup(),
         )
     except Exception:
@@ -149,7 +150,11 @@ async def cb_fav(call: CallbackQuery):
 async def cb_export(call: CallbackQuery):
     chat_id = int(call.data.split(":")[2])
     txt = storage.export_chat_txt(chat_id)
-    await call.message.edit_text("Экспорт чата (txt): отправляю файлом…", reply_markup=chat_inline_kb(chat_id, call.from_user.id).as_markup())
+    await safe_edit_text(
+        call.message,
+        "Экспорт чата (txt): отправляю файлом…",
+        reply_markup=chat_inline_kb(chat_id, call.from_user.id).as_markup(),
+    )
     try:
         from io import BytesIO
         bio = BytesIO(txt.encode("utf-8"))
@@ -164,7 +169,11 @@ async def cb_import(call: CallbackQuery, state: FSMContext):
     chat_id = int(call.data.split(":")[2])
     await state.set_state(ChatSG.importing)
     await state.update_data(chat_id=chat_id)
-    await call.message.edit_text("Пришлите один файл TXT/DOCX/PDF (до 5 МБ) для пополнения контекста.", reply_markup=chat_inline_kb(chat_id, call.from_user.id).as_markup())
+    await safe_edit_text(
+        call.message,
+        "Пришлите один файл TXT/DOCX/PDF (до 5 МБ) для пополнения контекста.",
+        reply_markup=chat_inline_kb(chat_id, call.from_user.id).as_markup(),
+    )
     await call.answer()
 
 
@@ -220,7 +229,7 @@ async def cb_del(call: CallbackQuery):
     kb.button(text="❌ Да, удалить", callback_data=f"chat:delok:{chat_id}")
     kb.button(text="⬅ Отмена", callback_data=f"chat:open:{chat_id}")
     kb.adjust(2)
-    await call.message.edit_text("Удалить чат? Это действие необратимо.", reply_markup=kb.as_markup())
+    await safe_edit_text(call.message, "Удалить чат? Это действие необратимо.", reply_markup=kb.as_markup())
     await call.answer()
 
 
@@ -229,11 +238,15 @@ async def cb_delok(call: CallbackQuery):
     chat_id = int(call.data.split(":")[2])
     if storage.delete_chat(chat_id, call.from_user.id):
         kb = InlineKeyboardBuilder()
-        kb.button(text="📋 Меню", callback_data="chars:menu")
+        kb.button(text="⬅ Назад", callback_data="chars:menu")
         kb.adjust(1)
-        await call.message.edit_text("Чат удалён. Вернуться к персонажам:", reply_markup=kb.as_markup())
+        await safe_edit_text(call.message, "Чат удалён. Вернуться к персонажам:", reply_markup=kb.as_markup())
     else:
-        await call.message.edit_text("Не удалось удалить чат.", reply_markup=chat_inline_kb(chat_id, call.from_user.id).as_markup())
+        await safe_edit_text(
+            call.message,
+            "Не удалось удалить чат.",
+            reply_markup=chat_inline_kb(chat_id, call.from_user.id).as_markup(),
+        )
     await call.answer()
 
 
