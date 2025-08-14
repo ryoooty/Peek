@@ -818,6 +818,12 @@ def add_cache_tokens(user_id: int, amount: int) -> None:
     )
 
 
+def get_cache_tokens(user_id: int) -> int:
+    """Return accumulated cache tokens for user."""
+    u = get_user(user_id) or {}
+    return int(u.get("cache_tokens") or 0)
+
+
 def spend_tokens(user_id: int, amount: int) -> Tuple[int, int, int]:
     """
     Списать amount биллинговых токенов: сначала free_toki, затем paid_tokens.
