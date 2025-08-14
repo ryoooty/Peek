@@ -112,6 +112,7 @@ def _apply_billing(
     if cache_tokens is None:
         cache_tokens = storage.get_cache_tokens(user_id)
     billed = _billable_tokens(model, usage_in, usage_out, cache_tokens)
+
     billed = int(math.ceil(billed * settings.toki_spend_coeff))
     _spent_free, _spent_paid, deficit = storage.spend_tokens(user_id, billed)
     return billed, deficit

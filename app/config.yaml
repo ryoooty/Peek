@@ -14,6 +14,7 @@ model_tariffs:
 
 toki_spend_coeff: 1.0
 
+
 subs:
   free:
     chats_page_size: 10
