@@ -104,6 +104,7 @@ def _billable_tokens(model: str, usage_in: int, usage_out: int) -> int:
 def _apply_billing(user_id: int, model: str, usage_in: int, usage_out: int) -> Tuple[int, int]:
     """Возвращает (billed, deficit)."""
     billed = _billable_tokens(model, usage_in, usage_out)
+    billed = int(math.ceil(billed * settings.toki_spend_coeff))
     _spent_free, _spent_paid, deficit = storage.spend_tokens(user_id, billed)
     return billed, deficit
 

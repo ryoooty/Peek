@@ -42,7 +42,7 @@ async def _set_bot_commands(bot: Bot) -> None:
         BotCommand(command="profile", description="Профиль"),
         BotCommand(command="characters", description="Персонажи"),
         BotCommand(command="chats", description="Мои чаты"),
-        BotCommand(command="balance", description="Баланс"),
+        BotCommand(command="balance", description="Токи"),
         BotCommand(command="reload", description="Перезагрузить конфиг (админ)"),
         BotCommand(command="maintenance", description="Режим техработ (админ)"),
     ]

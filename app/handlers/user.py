@@ -13,6 +13,7 @@ from aiogram.utils.keyboard import ReplyKeyboardBuilder
 from app import storage
 from app.config import settings
 from app.utils.tz import tz_keyboard
+from app.utils.telegram import safe_edit_text
 
 router = Router(name="user")
 
@@ -26,7 +27,7 @@ def main_menu_kb(user_id: int) -> ReplyKeyboardMarkup:
     kb.button(text="🎭 Персонажи")
     kb.button(text="💬 Мои чаты")
     kb.button(text="👤 Профиль")
-    kb.button(text="💰 Баланс")
+    kb.button(text="🪙 Токи")
     kb.adjust(1, 2, 2)
     return kb.as_markup(resize_keyboard=True)
 
@@ -85,7 +86,7 @@ async def cb_set_tz(call: CallbackQuery):
         await call.answer("Некорректное значение", show_alert=True)
         return
     storage.set_user_field(call.from_user.id, "tz_offset_min", offset)
-    await call.message.edit_text("Часовой пояс сохранён.")
+    await safe_edit_text(call.message, "Часовой пояс сохранён.")
     await call.message.answer("Здравствуйте!", reply_markup=main_menu_kb(call.from_user.id))
     await call.answer()
 

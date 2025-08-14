@@ -121,13 +121,14 @@ class Settings(BaseSettings):
                 input_per_1k=2.0, output_per_1k=2.0, cache_per_1k=1.0
             ),
             "deepseek-chat": ModelTariff(
-                input_per_1k=0.6, output_per_1k=0.6, cache_per_1k=0.3
+                input_per_1k=14, output_per_1k=110, cache_per_1k=7
             ),
             "deepseek-reasoner": ModelTariff(
-                input_per_1k=1.2, output_per_1k=1.2, cache_per_1k=0.6
+                input_per_1k=55, output_per_1k=219, cache_per_1k=14
             ),
         }
     )
+    toki_spend_coeff: float = 1.0
 
     # Subscribers limits (из YAML можно поменять)
     subs: SubsConfig = Field(default_factory=SubsConfig)

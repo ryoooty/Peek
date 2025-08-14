@@ -10,7 +10,7 @@ from app import storage
 
 router = Router(name="balance")
 
-BTN_BALANCE = "💰 Баланс"
+BTN_BALANCE = "🪙 Токи"
 
 
 def _balance_text(user_id: int) -> str:
