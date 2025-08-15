@@ -931,16 +931,34 @@ def daily_bonus_free_users() -> List[int]:
     return uids
 
 
-def expire_subscriptions() -> List[int]:
+def expire_subscriptions(col: str | None = None) -> List[int]:
     """Downgrade users whose subscription has expired.
 
-    Returns a list of affected user IDs.
+    Parameters
+    ----------
+    col:
+        Optional name of the column that stores subscription end timestamp.
+        When provided, the value must be one of the supported column names.
+
+    Returns
+    -------
+    list[int]
+        A list of affected user IDs.
     """
-    col = "sub_expires_at"
-    try:
-        _q(f"SELECT {col} FROM users LIMIT 0")
-    except Exception:
-        col = "sub_end"
+    allowed_cols = ("sub_expires_at", "sub_end")
+    if col is not None:
+        if col not in allowed_cols:
+            raise ValueError("Invalid column name")
+        if not _has_col("users", col):
+            raise ValueError(f"Column {col} does not exist")
+    else:
+        for c in allowed_cols:
+            if _has_col("users", c):
+                col = c
+                break
+        if col is None:
+            return []
+
     rows = _q(
         f"""
         SELECT tg_id FROM users
@@ -949,10 +967,14 @@ def expire_subscriptions() -> List[int]:
            AND {col} < CURRENT_TIMESTAMP
         """
     ).fetchall()
+
     uids: List[int] = []
     for r in rows:
         uid = int(r["tg_id"])
-        _exec(f"UPDATE users SET subscription='free', {col}=NULL WHERE tg_id=?", (uid,))
+        _exec(
+            f"UPDATE users SET subscription='free', {col}=NULL WHERE tg_id=?",
+            (uid,),
+        )
         uids.append(uid)
     return uids
 
