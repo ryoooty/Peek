@@ -25,6 +25,7 @@ from app import scheduler, runtime
 # Routers (подключаем команды и меню раньше, чат — последн
 from app.handlers import admin as admin_handlers
 from app.handlers import broadcast as broadcast_handlers
+from app.handlers import system as system_handlers
 from app.handlers import user as user_handlers
 from app.handlers import characters as characters_handlers
 from app.handlers import profile as profile_handlers
@@ -73,6 +74,7 @@ async def main():
     # Подключаем роутеры. ВАЖНО: «chats» — ПОСЛЕДНИЙ, чтобы не перехватывать slash-команды.
     dp.include_router(admin_handlers.router)
     dp.include_router(broadcast_handlers.router)
+    dp.include_router(system_handlers.router)
     dp.include_router(user_handlers.router)        # /start, главное меню
     dp.include_router(characters_handlers.router)  # карточки персонажей
 
