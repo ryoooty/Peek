@@ -13,15 +13,18 @@ if str(ROOT) not in sys.path:
 config_module = types.ModuleType("config")
 config_module.BASE_DIR = ROOT
 
+
 class DummySettings:
     def __init__(self):
         self.admin_ids = [1]
+
 
 config_module.settings = DummySettings()
 sys.modules["app.config"] = config_module
 
 from app import storage
 import app.handlers.admin as admin
+import app.handlers.characters as characters
 
 del sys.modules["app.config"]
 
@@ -41,11 +44,11 @@ class DummyBot:
 
 
 class DummyMessage:
-    def __init__(self):
+    def __init__(self, text: str, *, photo=None, caption=None):
         self.from_user = types.SimpleNamespace(id=1)
-        self.text = "/char_photo 1"
-        self.caption = None
-        self.photo = [types.SimpleNamespace(file_id="file123")]
+        self.text = text
+        self.caption = caption
+        self.photo = photo
         self.reply_to_message = None
         self.bot = DummyBot()
         self.sent: list[str] = []
@@ -54,10 +57,50 @@ class DummyMessage:
         self.sent.append(text)
 
 
-def test_cmd_char_photo_sends_single_confirmation(tmp_path, monkeypatch):
+def test_char_photo_requires_existing_character(tmp_path, monkeypatch):
     storage.init(tmp_path / "db.sqlite")
     monkeypatch.setattr(admin, "MEDIA_DIR", tmp_path)
-    msg = DummyMessage()
+    msg = DummyMessage("/char_photo 1", photo=[types.SimpleNamespace(file_id="f1")])
     asyncio.run(admin.cmd_char_photo(msg))
-    assert len(msg.sent) == 1
-    assert msg.sent[0].startswith("Фото сохранено")
+    assert msg.sent == ["Персонаж не найден. Сначала создайте его через /char_add"]
+
+
+def test_char_add_photo_and_open(tmp_path, monkeypatch):
+    storage.init(tmp_path / "db.sqlite")
+    monkeypatch.setattr(admin, "MEDIA_DIR", tmp_path)
+
+    # Add character
+    msg_add = DummyMessage("/char_add TestName|test-slug|Fandom|Short info")
+    sys.modules["app.config"] = config_module
+    asyncio.run(admin.cmd_char_add(msg_add))
+    del sys.modules["app.config"]
+    assert msg_add.sent == ["Персонаж создан: id=1"]
+
+    # Attach photo
+    msg_photo = DummyMessage(
+        "/char_photo 1", photo=[types.SimpleNamespace(file_id="file123")]
+    )
+    asyncio.run(admin.cmd_char_photo(msg_photo))
+    assert msg_photo.sent and msg_photo.sent[0].startswith("Фото сохранено")
+
+    ch = storage.get_character(1)
+
+    # Open character card and ensure photo is used
+    class FSInputFileDummy:
+        def __init__(self, path: str):
+            self.path = path
+
+    captured: dict = {}
+
+    async def fake_edit_or_send(message_or_call, *, media, caption, kb):
+        captured["media"] = media
+        captured["caption"] = caption
+
+    monkeypatch.setattr(characters, "FSInputFile", FSInputFileDummy)
+    monkeypatch.setattr(characters, "_edit_or_send_card", fake_edit_or_send)
+
+    msg_open = DummyMessage("/open")
+    asyncio.run(characters.open_character_card(msg_open, char_id=1))
+
+    assert isinstance(captured.get("media"), FSInputFileDummy)
+    assert captured["media"].path == ch["photo_path"]

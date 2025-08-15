@@ -28,6 +28,31 @@ MEDIA_DIR = Path(BASE_DIR) / "media" / "characters"
 MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 
 
+@router.message(Command("char_add"))
+async def cmd_char_add(msg: Message):
+    if not await _require_admin(msg):
+        return
+
+    parts = (msg.text or "").split(maxsplit=1)
+    if len(parts) < 2:
+        return await msg.answer(
+            "Использование: /char_add <name>|<slug>|<fandom>|<описание>"
+        )
+
+    args = [p.strip() for p in parts[1].split("|")]
+    while len(args) < 4:
+        args.append("")
+    name, slug, fandom, info_short = args[:4]
+
+    char_id = storage.ensure_character(
+        name,
+        slug=slug or None,
+        fandom=fandom or None,
+        info_short=info_short or None,
+    )
+    await msg.answer(f"Персонаж создан: id={char_id}")
+
+
 @router.message(Command("char_photo"))
 async def cmd_char_photo(msg: Message):
     if not await _require_admin(msg):
@@ -51,6 +76,9 @@ async def cmd_char_photo(msg: Message):
                 pass
     if not char_id:
         return await msg.answer("Неверный id. Пример: <code>/char_photo 123</code>")
+
+    if not storage.get_character(char_id):
+        return await msg.answer("Персонаж не найден. Сначала создайте его через /char_add")
 
     # достаём file_id из фото
     file_id = None
