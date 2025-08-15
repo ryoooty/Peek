@@ -79,7 +79,7 @@ async def cb_model(call: CallbackQuery):
     try:
         idx = models.index(cur)
     except ValueError:
-        idx = 0
+        idx = -1
     nxt = models[(idx + 1) % len(models)] if models else cur
     storage.set_user_field(call.from_user.id, "default_model", nxt)
     u = storage.get_user(call.from_user.id) or {}
