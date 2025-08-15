@@ -324,7 +324,7 @@ async def chatting_text(msg: Message):
             full = ""
             buf = ""
 
-            async for ev in live_stream(msg.from_user.id, chat_id, msg.text):
+            async for ev in live_stream(msg.from_user.id, chat_id, user_text):
                 if ev["kind"] == "chunk":
                     buf += ev["text"]
                     parts, buf = _extract_sections(buf)
@@ -355,7 +355,7 @@ async def chatting_text(msg: Message):
 
         else:
             # RP: один ответ
-            r = await chat_turn(msg.from_user.id, chat_id, msg.text)
+            r = await chat_turn(msg.from_user.id, chat_id, user_text)
 
             storage.add_message(
                 chat_id,
