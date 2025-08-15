@@ -26,6 +26,8 @@ def test_cb_set_prompts_handles_unknown_size(tmp_path, monkeypatch):
     config_module.BASE_DIR = ROOT
     config_module.register_reload_hook = lambda fn: None
     monkeypatch.setitem(sys.modules, "app.config", config_module)
+    sys.modules.pop("app.storage", None)
+    sys.modules.pop("app.handlers.profile", None)
 
     scheduler_module = types.ModuleType("app.scheduler")
     scheduler_module.rebuild_user_jobs = lambda *args, **kwargs: None
