@@ -7,7 +7,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from app.config import settings
+from app.config import BASE_DIR, settings
 
 
 sqlite3.register_adapter(bool, int)
@@ -364,8 +364,6 @@ def ensure_character(
     photo_id: str | None = None,
     photo_path: str | None = None,
 ) -> int:
-    from app.config import BASE_DIR
-
     r = _q(
         "SELECT id, slug, photo_path FROM characters WHERE name=?", (name,)
     ).fetchone()
@@ -714,6 +712,8 @@ def delete_chat(chat_id: int, user_id: int) -> bool:
         return False
     _exec("DELETE FROM messages WHERE chat_id=?", (chat_id,))
     _exec("DELETE FROM messages_fts WHERE chat_id=?", (chat_id,))
+    _exec("DELETE FROM proactive_plan WHERE chat_id=?", (chat_id,))
+    _exec("DELETE FROM proactive_log WHERE chat_id=?", (chat_id,))
     _exec("DELETE FROM chats WHERE id=?", (chat_id,))
     return True
 

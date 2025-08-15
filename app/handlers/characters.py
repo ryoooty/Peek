@@ -48,7 +48,6 @@ def _photo_input_for_char(ch: dict):
 
 
 
-
 def _char_card_kb(user_id: int, char_id: int) -> InlineKeyboardBuilder:
     has_chats = bool(storage.list_user_chats_by_char(user_id, char_id, limit=1))
     is_fav = storage.is_fav_char(user_id, char_id)
