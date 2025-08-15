@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import os
+from typing import TYPE_CHECKING
 
 from aiogram import Router, F
 from aiogram.enums import ChatAction
@@ -10,7 +12,6 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from app import storage
 from app.config import settings
 from app.domain.chats import chat_turn, live_stream, summarize_chat
 from app.scheduler import schedule_silence_check
@@ -18,12 +19,27 @@ from app.utils.telegram import safe_edit_text
 
 router = Router(name="chats")
 
+FEATURE_USAGE_MSG = os.getenv("FEATURE_USAGE_MSG") == "1"
+
+if TYPE_CHECKING:
+    from app import storage as storage_module
+
+storage: "storage_module | None" = None
+
+
+def _storage() -> "storage_module":
+    global storage
+    if storage is None:
+        from app import storage as storage_module  # type: ignore
+        storage = storage_module
+    return storage
+
 class ChatSG(StatesGroup):
     chatting = State()
     importing = State()
 
 def _limits_for(user_id: int):
-    u = storage.get_user(user_id) or {}
+    u = _storage().get_user(user_id) or {}
     sub = (u.get("subscription") or "free").lower()
     limits = getattr(settings.subs, sub, settings.subs.free)
     return limits
@@ -31,7 +47,7 @@ def _limits_for(user_id: int):
 
 def chats_page_kb(user_id: int, page: int):
     lim = _limits_for(user_id)
-    rows = storage.list_user_chats(user_id, page=page, page_size=lim.chats_page_size)
+    rows = _storage().list_user_chats(user_id, page=page, page_size=lim.chats_page_size)
     kb = InlineKeyboardBuilder()
     for r in rows:
         label = f"{r['seq_no']} — {r['char_name']}"
@@ -74,7 +90,7 @@ async def cb_chats_page(call: CallbackQuery):
 
 
 def chat_inline_kb(chat_id: int, user_id: int):
-    ch = storage.get_chat(chat_id) or {}
+    ch = _storage().get_chat(chat_id) or {}
     # 1: Продолжить, Что тут было
     kb = InlineKeyboardBuilder()
     kb.button(text="▶ Продолжить", callback_data=f"chat:cont:{chat_id}")
@@ -94,7 +110,7 @@ def chat_inline_kb(chat_id: int, user_id: int):
 
 
 async def open_chat_inline(msg_or_call: Message | CallbackQuery, *, chat_id: int):
-    ch = storage.get_chat(chat_id)
+    ch = _storage().get_chat(chat_id)
     if not ch:
         if isinstance(msg_or_call, CallbackQuery):
             return await msg_or_call.answer("Чат не найден", show_alert=True)
@@ -132,7 +148,7 @@ async def cb_what(call: CallbackQuery):
     try:
         await call.answer("Думаю…")
         await call.message.bot.send_chat_action(call.message.chat.id, ChatAction.TYPING)
-        u = storage.get_user(call.from_user.id) or {}
+        u = _storage().get_user(call.from_user.id) or {}
         model = (u.get("default_model") or settings.default_model)
 
         s = await summarize_chat(chat_id, model=model)
@@ -152,7 +168,7 @@ async def cb_fav(call: CallbackQuery):
         return await call.answer("Некорректные данные", show_alert=True)
     chat_id = int(parts[2])
     lim = _limits_for(call.from_user.id)
-    ok = storage.toggle_fav_chat(call.from_user.id, chat_id, allow_max=lim.fav_chats_max)
+    ok = _storage().toggle_fav_chat(call.from_user.id, chat_id, allow_max=lim.fav_chats_max)
     if not ok:
         await call.answer("Лимит избранных чатов исчерпан", show_alert=True)
     await open_chat_inline(call, chat_id=chat_id)
@@ -164,7 +180,7 @@ async def cb_export(call: CallbackQuery):
     if len(parts) < 3 or not parts[2].isdigit():
         return await call.answer("Некорректные данные", show_alert=True)
     chat_id = int(parts[2])
-    txt = storage.export_chat_txt(chat_id)
+    txt = _storage().export_chat_txt(chat_id)
     await safe_edit_text(
         call.message,
         "Экспорт чата (txt): отправляю файлом…",
@@ -230,7 +246,7 @@ async def import_doc(msg: Message, state: FSMContext):
         else:
             text = "(формат не поддержан)"
         if text.strip():
-            storage.add_message(chat_id, is_user=True, content=f"[Импортированный контент]\n{text[:4000]}")
+            _storage().add_message(chat_id, is_user=True, content=f"[Импортированный контент]\n{text[:4000]}")
             await msg.answer("Импортировано в контекст.", reply_markup=chat_inline_kb(chat_id, msg.from_user.id).as_markup())
         else:
             await msg.answer("Не удалось извлечь текст из файла.")
@@ -260,7 +276,7 @@ async def cb_delok(call: CallbackQuery):
     if len(parts) < 3 or not parts[2].isdigit():
         return await call.answer("Некорректные данные", show_alert=True)
     chat_id = int(parts[2])
-    if storage.delete_chat(chat_id, call.from_user.id):
+    if _storage().delete_chat(chat_id, call.from_user.id):
         kb = InlineKeyboardBuilder()
         kb.button(text="⬅ Назад", callback_data="chars:menu")
         kb.adjust(1)
@@ -303,15 +319,15 @@ def _extract_sections(buf: str) -> tuple[list[str], str]:
 @router.message(F.text & ~F.text.startswith("/"))
 async def chatting_text(msg: Message):
     # Определяем активный чат (последний «открытый»)
-    last = storage.get_last_chat(msg.from_user.id)
+    last = _storage().get_last_chat(msg.from_user.id)
     if not last:
         await msg.answer("Нет активного чата. Откройте персонажа и начните новый чат.")
         return
     chat_id = int(last["id"])
-    storage.touch_activity(msg.from_user.id)
+    _storage().touch_activity(msg.from_user.id)
     user_text = msg.text.replace("/s/", "").replace("/n/", "")
-    storage.add_message(chat_id, is_user=True, content=user_text)
-    storage.set_user_chatting(msg.from_user.id, True)  # <-- флаг «диалог начался»
+    _storage().add_message(chat_id, is_user=True, content=user_text)
+    _storage().set_user_chatting(msg.from_user.id, True)  # <-- флаг «диалог начался»
     # Индикатор «печатает…»
     stop = asyncio.Event()
     typer = asyncio.create_task(_typing_loop(msg, stop))
@@ -339,7 +355,7 @@ async def chatting_text(msg: Message):
                     usage_in = int(ev.get("usage_in") or 0)
                     usage_out = int(ev.get("usage_out") or 0)
                     cost_total = float(ev.get("cost_total") or 0)
-                    storage.add_message(
+                    _storage().add_message(
                         chat_id,
                         is_user=False,
                         content=full,
@@ -347,6 +363,10 @@ async def chatting_text(msg: Message):
                         usage_out=usage_out,
                         usage_cost_rub=cost_total,
                     )
+                    if FEATURE_USAGE_MSG:
+                        await msg.answer(
+                            f"usage_in: {usage_in}, usage_out: {usage_out}"
+                        )
                     if int(ev.get("deficit") or 0) > 0:
                         await msg.answer("⚠ Баланс токенов на нуле. Пополните баланс, чтобы продолжить комфортно.")
                                 # ответ в live завершён — теперь стартуем таймер «10 минут тишины»
@@ -357,7 +377,7 @@ async def chatting_text(msg: Message):
             # RP: один ответ
             r = await chat_turn(msg.from_user.id, chat_id, user_text)
 
-            storage.add_message(
+            _storage().add_message(
                 chat_id,
                 is_user=False,
                 content=r.text,
@@ -366,6 +386,10 @@ async def chatting_text(msg: Message):
                 usage_cost_rub=r.cost_total,
             )
             await msg.answer(r.text)
+            if FEATURE_USAGE_MSG:
+                await msg.answer(
+                    f"usage_in: {r.usage_in}, usage_out: {r.usage_out}"
+                )
             if r.deficit > 0:
                 await msg.answer("⚠ Баланс токенов на нуле. Пополните баланс, чтобы продолжить комфортно.")
             schedule_silence_check(msg.from_user.id, chat_id, delay_sec=600)
@@ -376,4 +400,4 @@ async def chatting_text(msg: Message):
             await asyncio.wait_for(typer, timeout=0.1)
         except Exception:
             pass
-        storage.set_user_chatting(msg.from_user.id, False)  # <-- диалог завершился
+        _storage().set_user_chatting(msg.from_user.id, False)  # <-- диалог завершился
