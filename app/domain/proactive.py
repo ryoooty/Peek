@@ -60,16 +60,20 @@ async def proactive_nudge(*, bot: Bot, user_id: int, chat_id: int) -> Optional[s
         "Сохраняй характер персонажа. Избегай повторов предыдущих фраз."
     )
     model = (storage.get_user(user_id) or {}).get("default_model") or settings.default_model
-    r = await provider_chat(
-        model=model,
-        messages=[
-            {"role": "system", "content": sys},
-            {"role": "user", "content": "\n".join(context) or "Начинай дружелюбно беседу."},
-        ],
-        temperature=0.7,
-        max_tokens=180,
-        timeout_s=settings.limits.request_timeout_seconds,
-    )
+    try:
+        r = await provider_chat(
+            model=model,
+            messages=[
+                {"role": "system", "content": sys},
+                {"role": "user", "content": "\n".join(context) or "Начинай дружелюбно беседу."},
+            ],
+            temperature=0.7,
+            max_tokens=180,
+            timeout_s=settings.limits.request_timeout_seconds,
+        )
+    except Exception:
+        storage.log_proactive(user_id, chat_id, int(chat["char_id"]), "error")
+        return None
     text = (r.text or "").strip()
     if not text:
         return None
