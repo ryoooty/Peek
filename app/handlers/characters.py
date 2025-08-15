@@ -35,13 +35,15 @@ def _char_card_caption(ch: dict) -> str:
 def _photo_input_for_char(ch: dict):
     """
     Возвращает FSInputFile, file_id(str) или None.
-    Приоритет: локальный файл (photo_path) -> photo_id -> None
+    Приоритет: photo_id -> локальный файл (photo_path) -> None
     """
+    fid = (ch.get("photo_id") or "").strip()
+    if fid:
+        return fid
     p = (ch.get("photo_path") or "").strip()
     if p and Path(p).exists():
         return FSInputFile(p)
-    fid = (ch.get("photo_id") or "").strip()
-    return fid or None
+    return None
 
 
 def _char_card_kb(user_id: int, char_id: int) -> InlineKeyboardBuilder:
