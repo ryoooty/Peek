@@ -39,6 +39,7 @@ def _photo_input_for_char(ch: dict):
     Local files are preferred over stored Telegram file IDs to ensure that a
     freshly uploaded photo is used when available.
     """
+
     p = (ch.get("photo_path") or "").strip()
     if p and Path(p).exists():
         return FSInputFile(p)
