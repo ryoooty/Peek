@@ -4,15 +4,18 @@ from __future__ import annotations
 
 from typing import Tuple
 
-from app.config import settings
+from importlib import import_module
+
+
+def _settings():
+    return import_module("app.config").settings
 
 
 def get_out_price_per_1k(model: str) -> float:
 
     """Return price for 1k output tokens for given model."""
-    t = settings.model_tariffs.get(model) or settings.model_tariffs.get(
-        settings.default_model
-    )
+    s = _settings()
+    t = s.model_tariffs.get(model) or s.model_tariffs.get(s.default_model)
     return float(t.output_per_1k if t else 0.0)
 
 
@@ -28,9 +31,8 @@ def calc_usage_cost_rub(
     corresponds to tokens served from cache (usually ``0``).
     """
 
-    t = settings.model_tariffs.get(model) or settings.model_tariffs.get(
-        settings.default_model
-    )
+    s = _settings()
+    t = s.model_tariffs.get(model) or s.model_tariffs.get(s.default_model)
     if not t:
         return 0.0, 0.0, 0.0, 0.0
 

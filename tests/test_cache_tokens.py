@@ -38,12 +38,24 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))
 
-config_module = types.ModuleType("config")
-config_module.settings = DummySettings()
-sys.modules["app.config"] = config_module
 
-from app import storage
-from app.domain import chats
+def _setup(monkeypatch):
+    config_module = types.ModuleType("config")
+    config_module.settings = DummySettings()
+    config_module.BASE_DIR = ROOT
+    config_module.register_reload_hook = lambda fn: None
+    monkeypatch.setitem(sys.modules, "app.config", config_module)
+
+    import importlib
+    monkeypatch.delitem(sys.modules, "app.storage", raising=False)
+    monkeypatch.delitem(sys.modules, "app.domain.chats", raising=False)
+    storage = importlib.import_module("app.storage")
+    chats = importlib.import_module("app.domain.chats")
+
+    # ensure cleanup after test
+    monkeypatch.setitem(sys.modules, "app.storage", storage)
+    monkeypatch.setitem(sys.modules, "app.domain.chats", chats)
+    return storage, chats
 
 
 class DummyResp:
@@ -54,8 +66,11 @@ class DummyResp:
 
 
 def test_chat_turn_accumulates_cache_tokens(tmp_path, monkeypatch):
+    storage, chats = _setup(monkeypatch)
     storage.init(tmp_path / "chat.db")
     storage.ensure_user(1, "u")
+    char_id = int(storage._exec("INSERT INTO characters(name) VALUES (?)", ("Char",)).lastrowid)
+    chat_id = storage.create_chat(1, char_id)
 
     async def _collect_ctx(chat_id, **kwargs):
         return []
@@ -74,16 +89,19 @@ def test_chat_turn_accumulates_cache_tokens(tmp_path, monkeypatch):
 
     monkeypatch.setattr(chats, "provider_chat", fake_chat)
 
-    asyncio.run(chats.chat_turn(1, 1, "hi"))
-    asyncio.run(chats.chat_turn(1, 1, "hi"))
+    asyncio.run(chats.chat_turn(1, chat_id, "hi"))
+    asyncio.run(chats.chat_turn(1, chat_id, "hi"))
 
-    u = storage.get_user(1) or {}
-    assert int(u.get("cache_tokens") or 0) == (3 + 7) + (2 + 1)
+    ch = storage.get_chat(chat_id) or {}
+    assert int(ch.get("cache_tokens") or 0) == (3 + 7) + (2 + 1)
 
 
 def test_live_stream_accumulates_cache_tokens(tmp_path, monkeypatch):
+    storage, chats = _setup(monkeypatch)
     storage.init(tmp_path / "stream.db")
     storage.ensure_user(2, "u")
+    char_id = int(storage._exec("INSERT INTO characters(name) VALUES (?)", ("Char",)).lastrowid)
+    chat_id = storage.create_chat(2, char_id)
 
     async def _collect_ctx(chat_id, **kwargs):
         return []
@@ -100,10 +118,10 @@ def test_live_stream_accumulates_cache_tokens(tmp_path, monkeypatch):
 
     monkeypatch.setattr(chats, "provider_stream", fake_stream)
 
-    asyncio.run(_consume_stream(chats.live_stream(2, 1, "hi")))
+    asyncio.run(_consume_stream(chats.live_stream(2, chat_id, "hi")))
 
-    u = storage.get_user(2) or {}
-    assert int(u.get("cache_tokens") or 0) == 5 + 7
+    ch = storage.get_chat(chat_id) or {}
+    assert int(ch.get("cache_tokens") or 0) == 5 + 7
 
 
 async def _consume_stream(gen):
@@ -112,9 +130,12 @@ async def _consume_stream(gen):
 
 
 def test_cache_tokens_affect_billing(tmp_path, monkeypatch):
+    storage, chats = _setup(monkeypatch)
     storage.init(tmp_path / "bill.db")
     storage.ensure_user(3, "u")
     storage.add_toki(3, 100)
+    char_id = int(storage._exec("INSERT INTO characters(name) VALUES (?)", ("Char",)).lastrowid)
+    chat_id = storage.create_chat(3, char_id)
 
     async def _collect_ctx(chat_id, **kwargs):
         return []
@@ -132,8 +153,8 @@ def test_cache_tokens_affect_billing(tmp_path, monkeypatch):
 
     monkeypatch.setattr(chats, "provider_chat", fake_chat)
 
-    r1 = asyncio.run(chats.chat_turn(3, 1, "hi"))
+    r1 = asyncio.run(chats.chat_turn(3, chat_id, "hi"))
     assert r1.billed == 1
-    r2 = asyncio.run(chats.chat_turn(3, 1, "hi"))
+    r2 = asyncio.run(chats.chat_turn(3, chat_id, "hi"))
     assert r2.billed == 1  # billed solely for cached tokens
 

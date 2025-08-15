@@ -164,6 +164,7 @@ def _migrate() -> None:
         min_delay_ms  INTEGER DEFAULT 0,
         seq_no        INTEGER,
         is_favorite   INTEGER DEFAULT 0,
+        cache_tokens  INTEGER DEFAULT 0,
         created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP
     )"""
@@ -183,6 +184,17 @@ def _migrate() -> None:
     )
     if not _has_col("chats", "is_favorite"):
         _exec("ALTER TABLE chats ADD COLUMN is_favorite INTEGER DEFAULT 0")
+    if not _has_col("chats", "cache_tokens"):
+        _exec("ALTER TABLE chats ADD COLUMN cache_tokens INTEGER DEFAULT 0")
+        _exec(
+            """
+            UPDATE chats
+               SET cache_tokens = (
+                   SELECT cache_tokens FROM users WHERE users.tg_id = chats.user_id
+               )
+            """
+        )
+        _exec("UPDATE users SET cache_tokens = 0")
 
     # messages
     _exec(
@@ -923,17 +935,17 @@ def add_paid_tokens(user_id: int, amount: int, meta: str = "topup") -> None:
 
 
 
-def add_cache_tokens(user_id: int, amount: int) -> None:
+def add_cache_tokens(chat_id: int, amount: int) -> None:
     _exec(
-        "UPDATE users SET cache_tokens = cache_tokens + ? WHERE tg_id=?",
-        (int(amount), user_id),
+        "UPDATE chats SET cache_tokens = cache_tokens + ? WHERE id=?",
+        (int(amount), chat_id),
     )
 
 
-def get_cache_tokens(user_id: int) -> int:
-    """Return accumulated cache tokens for user."""
-    u = get_user(user_id) or {}
-    return int(u.get("cache_tokens") or 0)
+def get_cache_tokens(chat_id: int) -> int:
+    """Return accumulated cache tokens for chat."""
+    ch = get_chat(chat_id) or {}
+    return int(ch.get("cache_tokens") or 0)
 
 
 def spend_tokens(user_id: int, amount: int) -> Tuple[int, int, int]:

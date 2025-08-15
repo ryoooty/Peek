@@ -41,8 +41,11 @@ def _setup(monkeypatch):
     scheduler_module.rebuild_user_jobs = lambda *args, **kwargs: None
     monkeypatch.setitem(sys.modules, "app.scheduler", scheduler_module)
 
-    from app import storage
-    from app.handlers import profile
+    import importlib
+    monkeypatch.delitem(sys.modules, "app.storage", raising=False)
+    monkeypatch.delitem(sys.modules, "app.handlers.profile", raising=False)
+    storage = importlib.import_module("app.storage")
+    profile = importlib.import_module("app.handlers.profile")
 
     async def dummy_safe_edit_text(message, text, **kwargs):
         await message.edit_text(text, **kwargs)

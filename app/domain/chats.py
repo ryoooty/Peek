@@ -59,8 +59,8 @@ async def _collect_context(
             usage_in=summary.usage_in,
             usage_out=summary.usage_out,
         )
-        _apply_billing(user_id, model, summary.usage_in, summary.usage_out)
-        storage.add_cache_tokens(user_id, summary.usage_in + summary.usage_out)
+        _apply_billing(user_id, chat_id, model, summary.usage_in, summary.usage_out)
+        storage.add_cache_tokens(chat_id, summary.usage_in + summary.usage_out)
         tail = res[1:][-20:]
         res = [
             dict(role="system", content=system_prompt),
@@ -111,11 +111,16 @@ def _billable_tokens(
 
 
 def _apply_billing(
-    user_id: int, model: str, usage_in: int, usage_out: int, cache_tokens: int | None = None
+    user_id: int,
+    chat_id: int,
+    model: str,
+    usage_in: int,
+    usage_out: int,
+    cache_tokens: int | None = None,
 ) -> Tuple[int, int]:
     """Возвращает (billed, deficit)."""
     if cache_tokens is None:
-        cache_tokens = storage.get_cache_tokens(user_id)
+        cache_tokens = storage.get_cache_tokens(chat_id)
     billed = _billable_tokens(model, usage_in, usage_out, cache_tokens)
     billed = int(math.ceil(billed * settings.toki_spend_coeff))
     _spent_free, _spent_paid, deficit = storage.spend_tokens(user_id, billed)
@@ -162,8 +167,8 @@ async def _maybe_compress_history(user_id: int, chat_id: int, model: str) -> Non
         usage_in=summary.usage_in,
         usage_out=summary.usage_out,
     )
-    _apply_billing(user_id, model, summary.usage_in, summary.usage_out)
-    storage.add_cache_tokens(user_id, summary.usage_in + summary.usage_out)
+    _apply_billing(user_id, chat_id, model, summary.usage_in, summary.usage_out)
+    storage.add_cache_tokens(chat_id, summary.usage_in + summary.usage_out)
 
 
 async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
@@ -175,7 +180,7 @@ async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
 
     await _maybe_compress_history(user_id, chat_id, model)
 
-    cache_before = storage.get_cache_tokens(user_id)
+    cache_before = storage.get_cache_tokens(chat_id)
     messages = await _collect_context(
         chat_id, user_id=user_id, model=model, query=text
     )
@@ -196,9 +201,9 @@ async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
     usage_in = int(r.usage_in or 0)
     usage_out = int(r.usage_out or 0)
     billed, deficit = _apply_billing(
-        user_id, model, usage_in, usage_out, cache_before
+        user_id, chat_id, model, usage_in, usage_out, cache_before
     )
-    storage.add_cache_tokens(user_id, usage_in + usage_out)
+    storage.add_cache_tokens(chat_id, usage_in + usage_out)
     cost_in, cost_out, cost_cache, cost_total = calc_usage_cost_rub(
         model, usage_in, usage_out, cache_before
     )
@@ -230,7 +235,7 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[D
 
     await _maybe_compress_history(user_id, chat_id, model)
 
-    cache_before = storage.get_cache_tokens(user_id)
+    cache_before = storage.get_cache_tokens(chat_id)
     messages = await _collect_context(
         chat_id, user_id=user_id, model=model, query=text
     )
@@ -254,9 +259,9 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[D
                 usage_in = int(ev.get("in") or 0)
                 usage_out = int(ev.get("out") or 0)
                 billed, deficit = _apply_billing(
-                    user_id, model, usage_in, usage_out, cache_before
+                    user_id, chat_id, model, usage_in, usage_out, cache_before
                 )
-                storage.add_cache_tokens(user_id, usage_in + usage_out)
+                storage.add_cache_tokens(chat_id, usage_in + usage_out)
                 cost_in, cost_out, cost_cache, cost_total = calc_usage_cost_rub(
                     model, usage_in, usage_out, cache_before
                 )
