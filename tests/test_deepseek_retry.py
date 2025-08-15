@@ -27,6 +27,8 @@ def test_chat_retries(monkeypatch):
     fail_times = 2
 
     class DummyResp:
+        status = 200
+
         def __init__(self):
             self._data = {
                 "choices": [{"message": {"content": "hello"}}],

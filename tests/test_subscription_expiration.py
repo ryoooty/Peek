@@ -1,6 +1,7 @@
 import asyncio
 import datetime as dt
 import sys
+import pytest
 
 try:
     import pydantic
@@ -100,3 +101,30 @@ def test_active_subscription_untouched(tmp_path):
     u = storage.get_user(2)
     assert u["subscription"] == "pro"
     assert not bot.sent
+
+
+def test_expire_subscriptions_downgrades_direct(tmp_path):
+    storage.init(tmp_path / "db3.sqlite")
+    storage.ensure_user(3, "u3")
+    past = dt.datetime.utcnow() - dt.timedelta(days=1)
+    storage.set_user_field(3, "subscription", "pro")
+    storage.set_user_field(3, "sub_end", _fmt(past))
+
+    affected = storage.expire_subscriptions(col="sub_end")
+
+    assert affected == [3]
+    u = storage.get_user(3)
+    assert u["subscription"] == "free"
+    assert u["sub_end"] is None
+
+
+def test_expire_subscriptions_rejects_invalid_column(tmp_path):
+    storage.init(tmp_path / "db4.sqlite")
+    storage.ensure_user(4, "u4")
+    with pytest.raises(ValueError):
+        storage.expire_subscriptions(col="sub_end; DROP TABLE users;--")
+
+    # Table should remain intact
+    storage.ensure_user(5, "u5")
+    u = storage.get_user(5)
+    assert u["tg_id"] == 5

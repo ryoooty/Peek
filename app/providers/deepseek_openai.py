@@ -56,6 +56,9 @@ async def chat(
             try:
                 async with aiohttp.ClientSession(timeout=timeout) as ses:
                     async with ses.post(url, headers=headers, json=payload) as resp:
+                        if resp.status != 200:
+                            logger.error("deepseek chat returned %s", resp.status)
+                            continue
                         data = await resp.json()
                 choice = data["choices"][0]
                 txt = choice["message"]["content"]
