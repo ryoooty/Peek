@@ -203,7 +203,10 @@ async def cb_set_live_win(call: CallbackQuery):
     u = storage.get_user(call.from_user.id) or {}
     win = (u.get("pro_window_local") or "09:00-21:00")
     presets = ["09:00-21:00", "10:00-22:00", "12:00-20:00", "08:00-18:00"]
-    nxt = presets[(presets.index(win) + 1) % len(presets)]
+    try:
+        nxt = presets[(presets.index(win) + 1) % len(presets)]
+    except ValueError:
+        nxt = presets[0]
     storage.set_user_field(call.from_user.id, "pro_window_local", nxt)
     # проставим совместимое UTC‑поле, если используется где‑то ещё
     tz = int((u.get("tz_offset_min") or 180))
