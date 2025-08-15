@@ -56,18 +56,24 @@ class SubsConfig(BaseModel):
     )
     # Ночной бонус «токов» (бесплатных) по уровням
     nightly_toki_bonus: Dict[str, int] = Field(
-        default_factory=lambda: {"free": 50000, "silver": 150000, "gold": 300000}
+        default_factory=lambda: {"free": 1000, "silver": 1000, "gold": 1000}
     )
 
 
 class LimitsConfig(BaseModel):
     rate_limit_seconds: int = 3
-    context_threshold_tokens: int = 6000
+    context_threshold_tokens: int = 60000
     proactive_enabled: bool = True
     request_timeout_seconds: int = 60
     proactive_cost_tokens: int = 0  # стоимость 1 проактивного после 2 free в биллинговых токенах
     live_split_nl_count: int = 3
     auto_compress_default: bool = True
+
+
+class PayOption(BaseModel):
+    tokens: int
+    price_rub: int
+    emoji: str | None = None
 
 
 class Settings(BaseSettings):
@@ -129,6 +135,7 @@ class Settings(BaseSettings):
         }
     )
     toki_spend_coeff: float = 1.0
+    pay_options: List[PayOption] = Field(default_factory=list)
 
     # Subscribers limits (из YAML можно поменять)
     subs: SubsConfig = Field(default_factory=SubsConfig)
