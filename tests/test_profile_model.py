@@ -30,7 +30,7 @@ class DummySettings:
         self.limits = DummyLimits()
 
 
-def test_cb_model_handles_unknown_current_model(tmp_path, monkeypatch):
+def _setup(monkeypatch):
     config_module = types.ModuleType("app.config")
     config_module.settings = DummySettings()
     config_module.BASE_DIR = ROOT
@@ -46,24 +46,33 @@ def test_cb_model_handles_unknown_current_model(tmp_path, monkeypatch):
 
     async def dummy_safe_edit_text(message, text, **kwargs):
         await message.edit_text(text, **kwargs)
+
     monkeypatch.setattr(profile, "safe_edit_text", dummy_safe_edit_text)
 
-    class DummyMessage:
-        def __init__(self, user_id: int):
-            self.from_user = SimpleNamespace(id=user_id)
-            self.edited: list[str] = []
+    return storage, profile
 
-        async def edit_text(self, text: str, **kwargs):
-            self.edited.append(text)
 
-    class DummyCall:
-        def __init__(self, user_id: int):
-            self.from_user = SimpleNamespace(id=user_id)
-            self.message = DummyMessage(user_id)
-            self.answered: list[str] = []
+class DummyMessage:
+    def __init__(self, user_id: int):
+        self.from_user = SimpleNamespace(id=user_id)
+        self.edited: list[str] = []
 
-        async def answer(self, text: str, *args, **kwargs):
-            self.answered.append(text)
+    async def edit_text(self, text: str, **kwargs):
+        self.edited.append(text)
+
+
+class DummyCall:
+    def __init__(self, user_id: int):
+        self.from_user = SimpleNamespace(id=user_id)
+        self.message = DummyMessage(user_id)
+        self.answered: list[str] = []
+
+    async def answer(self, text: str, *args, **kwargs):
+        self.answered.append(text)
+
+
+def test_cb_model_handles_unknown_current_model(tmp_path, monkeypatch):
+    storage, profile = _setup(monkeypatch)
 
     storage.init(tmp_path / "db.sqlite")
     storage.ensure_user(1, "tester")
@@ -73,6 +82,22 @@ def test_cb_model_handles_unknown_current_model(tmp_path, monkeypatch):
     asyncio.run(profile.cb_model(call))
 
     u = storage.get_user(1)
-    assert u["default_model"] == "model-b"
+    assert u["default_model"] == "model-a"
+    assert call.answered == ["Модель обновлена"]
+    assert call.message.edited
+
+
+def test_cb_model_handles_missing_default_model(tmp_path, monkeypatch):
+    storage, profile = _setup(monkeypatch)
+
+    storage.init(tmp_path / "db.sqlite")
+    storage.ensure_user(1, "tester")
+    # user has no default_model set, settings.default_model not in tariffs
+
+    call = DummyCall(1)
+    asyncio.run(profile.cb_model(call))
+
+    u = storage.get_user(1)
+    assert u["default_model"] == "model-a"
     assert call.answered == ["Модель обновлена"]
     assert call.message.edited
