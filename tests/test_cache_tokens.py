@@ -81,7 +81,7 @@ def test_chat_turn_accumulates_cache_tokens(tmp_path, monkeypatch):
     assert int(u.get("cache_tokens") or 0) == (3 + 7) + (2 + 1)
 
 
-def test_live_stream_accumulates_cache_tokens(tmp_path, monkeypatch):
+def test_chat_stream_accumulates_cache_tokens(tmp_path, monkeypatch):
     storage.init(tmp_path / "stream.db")
     storage.ensure_user(2, "u")
 
@@ -100,7 +100,7 @@ def test_live_stream_accumulates_cache_tokens(tmp_path, monkeypatch):
 
     monkeypatch.setattr(chats, "provider_stream", fake_stream)
 
-    asyncio.run(_consume_stream(chats.live_stream(2, 1, "hi")))
+    asyncio.run(_consume_stream(chats.chat_stream(2, 1, "hi")))
 
     u = storage.get_user(2) or {}
     assert int(u.get("cache_tokens") or 0) == 5 + 7

@@ -6,7 +6,7 @@ from aiogram import Bot
 class TypingPacer:
     """
     Держит action 'typing' активным, пока идёт генерация.
-    Полезно как в RP, так и в Live-режиме (между сегментами).
+    Полезно как в RP, так и в чат-режиме (между сегментами).
     """
     def __init__(self, bot: Bot, chat_id: int, interval: float = 4.5):
         # у Telegram действие «печатает…» живёт ~5с — пингуем чуть раньше
