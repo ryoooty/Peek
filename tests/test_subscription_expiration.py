@@ -1,54 +1,57 @@
 import asyncio
 import datetime as dt
 import sys
-import types
 
-# Stubs for external packages
-pydantic = types.ModuleType("pydantic")
+try:
+    import pydantic
+    import pydantic_settings
+    import aiogram
+    if not hasattr(aiogram, "Bot"):  # pragma: no cover
+        class _StubBot:
+            async def send_message(self, *args, **kwargs):
+                pass
 
+        aiogram.Bot = _StubBot
+except ImportError:  # pragma: no cover - executed only without deps
+    import types
 
-class _BaseModel:
-    def __init__(self, *args, **kwargs):
-        pass
+    pydantic = types.ModuleType("pydantic")
 
+    class _BaseModel:
+        def __init__(self, *args, **kwargs):
+            pass
 
-def _Field(*args, **kwargs):
-    default = kwargs.get("default")
-    if "default_factory" in kwargs:
-        return kwargs["default_factory"]()
-    return default
+    def _Field(*args, **kwargs):
+        default = kwargs.get("default")
+        if "default_factory" in kwargs:
+            return kwargs["default_factory"]()
+        return default
 
+    pydantic.BaseModel = _BaseModel
+    pydantic.Field = _Field
+    sys.modules["pydantic"] = pydantic
 
-pydantic.BaseModel = _BaseModel
-pydantic.Field = _Field
-sys.modules.setdefault("pydantic", pydantic)
+    pydantic_settings = types.ModuleType("pydantic_settings")
 
-pydantic_settings = types.ModuleType("pydantic_settings")
+    class _BaseSettings:
+        def __init__(self, *args, **kwargs):
+            pass
 
+    def _SettingsConfigDict(**kwargs):
+        return kwargs
 
-class _BaseSettings:
-    def __init__(self, *args, **kwargs):
-        pass
+    pydantic_settings.BaseSettings = _BaseSettings
+    pydantic_settings.SettingsConfigDict = _SettingsConfigDict
+    sys.modules["pydantic_settings"] = pydantic_settings
 
+    aiogram = types.ModuleType("aiogram")
 
-def _SettingsConfigDict(**kwargs):
-    return kwargs
+    class _StubBot:
+        async def send_message(self, *args, **kwargs):
+            pass
 
-
-pydantic_settings.BaseSettings = _BaseSettings
-pydantic_settings.SettingsConfigDict = _SettingsConfigDict
-sys.modules.setdefault("pydantic_settings", pydantic_settings)
-
-# Provide minimal aiogram.Bot for scheduler import
-aiogram = sys.modules.setdefault("aiogram", types.ModuleType("aiogram"))
-
-
-class _StubBot:
-    async def send_message(self, *args, **kwargs):
-        pass
-
-
-aiogram.Bot = _StubBot
+    aiogram.Bot = _StubBot
+    sys.modules["aiogram"] = aiogram
 
 from app import scheduler, storage
 
