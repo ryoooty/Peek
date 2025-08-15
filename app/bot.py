@@ -97,6 +97,7 @@ async def main():
         await dp.start_polling(bot)
     finally:
         logging.info("Bot stopped")
+        scheduler.shutdown()
 
 
 if __name__ == "__main__":
