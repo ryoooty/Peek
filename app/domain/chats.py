@@ -53,10 +53,9 @@ async def _collect_context(
     total_tokens = sum(_approx_tokens(m["content"]) for m in res)
     if threshold and total_tokens > threshold:
         summary = await summarize_chat(chat_id, model=model)
-        storage.add_message(
+        storage.compress_history(
             chat_id,
-            is_user=False,
-            content=f"[summary]\n{summary.text}",
+            summary.text,
             usage_in=summary.usage_in,
             usage_out=summary.usage_out,
         )
