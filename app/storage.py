@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 import time
+import re
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -117,6 +118,8 @@ def _migrate() -> None:
         _exec("ALTER TABLE users ADD COLUMN pro_free_used INTEGER DEFAULT 0")
     if not _has_col("users", "last_bonus_date"):
         _exec("ALTER TABLE users ADD COLUMN last_bonus_date TEXT")
+    if not _has_col("users", "last_daily_bonus_at"):
+        _exec("ALTER TABLE users ADD COLUMN last_daily_bonus_at DATETIME")
 
 
     # characters
@@ -321,6 +324,25 @@ def get_user(user_id: int) -> Dict[str, Any] | None:
 
 
 def set_user_field(user_id: int, field: str, value: Any) -> None:
+    allowed = {
+        "username",
+        "subscription",
+        "sub_end",
+        "tz_offset_min",
+        "default_chat_mode",
+        "default_resp_size",
+        "default_model",
+        "proactive_enabled",
+        "pro_per_day",
+        "pro_window_local",
+        "pro_window_utc",
+        "pro_min_gap_min",
+        "pro_min_delay_min",
+        "pro_max_delay_min",
+        "pro_free_used",
+    }
+    if field not in allowed:
+        raise ValueError("invalid field")
     _exec(f"UPDATE users SET {field}=? WHERE tg_id=?", (value, user_id))
 
 
@@ -641,16 +663,23 @@ def list_messages(chat_id: int, *, limit: int | None = None) -> List[Dict[str, A
 
 def search_messages(chat_id: int, query: str, limit: int = 20) -> List[Dict[str, Any]]:
     """Search messages of a chat using full-text search."""
-    rows = _q(
-        """
-        SELECT rowid AS id, content, chat_id, is_user
-          FROM messages_fts
-         WHERE messages_fts MATCH ? AND chat_id=?
-         ORDER BY bm25(messages_fts)
-         LIMIT ?
-    """,
-        (query, chat_id, limit),
-    ).fetchall()
+    # Strip characters that commonly break FTS queries
+    query = re.sub(r'["*]', '', query).strip()
+    if not query:
+        return []
+    try:
+        rows = _q(
+            """
+            SELECT rowid AS id, content, chat_id, is_user
+              FROM messages_fts
+             WHERE messages_fts MATCH ? AND chat_id=?
+             ORDER BY bm25(messages_fts)
+             LIMIT ?
+        """,
+            (query, chat_id, limit),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return []
     return [dict(r) for r in rows]
 
 
@@ -929,16 +958,34 @@ def daily_bonus_free_users() -> List[int]:
     return uids
 
 
-def expire_subscriptions() -> List[int]:
+def expire_subscriptions(col: str | None = None) -> List[int]:
     """Downgrade users whose subscription has expired.
 
-    Returns a list of affected user IDs.
+    Parameters
+    ----------
+    col:
+        Optional name of the column that stores subscription end timestamp.
+        When provided, the value must be one of the supported column names.
+
+    Returns
+    -------
+    list[int]
+        A list of affected user IDs.
     """
-    col = "sub_expires_at"
-    try:
-        _q(f"SELECT {col} FROM users LIMIT 0")
-    except Exception:
-        col = "sub_end"
+    allowed_cols = ("sub_expires_at", "sub_end")
+    if col is not None:
+        if col not in allowed_cols:
+            raise ValueError("Invalid column name")
+        if not _has_col("users", col):
+            raise ValueError(f"Column {col} does not exist")
+    else:
+        for c in allowed_cols:
+            if _has_col("users", c):
+                col = c
+                break
+        if col is None:
+            return []
+
     rows = _q(
         f"""
         SELECT tg_id FROM users
@@ -947,10 +994,14 @@ def expire_subscriptions() -> List[int]:
            AND {col} < CURRENT_TIMESTAMP
         """
     ).fetchall()
+
     uids: List[int] = []
     for r in rows:
         uid = int(r["tg_id"])
-        _exec(f"UPDATE users SET subscription='free', {col}=NULL WHERE tg_id=?", (uid,))
+        _exec(
+            f"UPDATE users SET subscription='free', {col}=NULL WHERE tg_id=?",
+            (uid,),
+        )
         uids.append(uid)
     return uids
 

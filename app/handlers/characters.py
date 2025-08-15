@@ -34,16 +34,18 @@ def _char_card_caption(ch: dict) -> str:
 
 
 def _photo_input_for_char(ch: dict):
+    """Return an input for the character's photo.
+
+    Local files are preferred over stored Telegram file IDs to ensure that a
+    freshly uploaded photo is used when available.
     """
-    Возвращает FSInputFile, file_id(str) или None.
-    Приоритет: photo_id -> локальный файл (photo_path) -> None
-    """
-    fid = (ch.get("photo_id") or "").strip()
-    if fid:
-        return fid
+
     p = (ch.get("photo_path") or "").strip()
     if p and Path(p).exists():
         return FSInputFile(p)
+    fid = (ch.get("photo_id") or "").strip()
+    if fid:
+        return fid
     return None
 
 
@@ -246,6 +248,7 @@ async def cb_char_new(call: CallbackQuery):
     asyncio.create_task(open_chat_inline(call, chat_id=chat_id))
 
 
+
 @router.callback_query(F.data.startswith("char:cont:"))
 async def cb_char_cont(call: CallbackQuery):
     parts = call.data.split(":")
@@ -308,6 +311,7 @@ async def cb_char_settings(call: CallbackQuery):
     )
     r = rows[0] if rows else None
     cnt = int(r["c"] or 0)
+
 
     kb = InlineKeyboardBuilder()
     kb.button(

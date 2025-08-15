@@ -1,9 +1,11 @@
 
+import os
 import sys
 import types
 from pathlib import Path
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
+os.environ.setdefault("BOT_TOKEN", "test")
 
 
 class _Dummy:
