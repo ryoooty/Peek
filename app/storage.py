@@ -117,6 +117,8 @@ def _migrate() -> None:
         _exec("ALTER TABLE users ADD COLUMN pro_free_used INTEGER DEFAULT 0")
     if not _has_col("users", "last_bonus_date"):
         _exec("ALTER TABLE users ADD COLUMN last_bonus_date TEXT")
+    if not _has_col("users", "last_daily_bonus_at"):
+        _exec("ALTER TABLE users ADD COLUMN last_daily_bonus_at DATETIME")
 
 
     # characters
