@@ -166,9 +166,13 @@ def schedule_window_jobs_for_user(user_id: int) -> None:
     if int(u.get("proactive_enabled") or 0) != 1:
         return
     win = str(u.get("pro_window_utc") or "06:00-18:00")
-    s, e = win.split("-")
-    sh, sm = _parse_hhmm(s)
-    eh, em = _parse_hhmm(e)
+    try:
+        s, e = win.split("-")
+        sh, sm = _parse_hhmm(s)
+        eh, em = _parse_hhmm(e)
+    except Exception:
+        sh, sm = 6, 0
+        eh, em = 18, 0
     for shift in (0, 1):
         start_dt = _today_utc(sh, sm, day_shift=shift)
         end_dt = _today_utc(eh, em, day_shift=shift)
