@@ -4,9 +4,10 @@ import hashlib
 import hmac
 import json
 from aiohttp import web
-from aiogram import Router
+from aiogram import Router, F
 from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.types import Message, InlineKeyboardButton, CallbackQuery
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from app import storage
 from app.config import settings
@@ -56,13 +57,21 @@ async def donationalerts_webhook(req: web.Request) -> web.Response:
 
 @router.message(Command("pay"))
 async def cmd_pay(msg: Message):
-    txt = (
-        "Пополнение баланса:\n\n"
-        "1) Boosty — переведите любую сумму и пришлите /confirm <сумма>.\n"
-        "2) DonationAlerts — то же самое.\n\n"
-        "После модерации токены будут начислены. Курс и детали — у админа."
-    )
-    await msg.answer(txt)
+    kb = InlineKeyboardBuilder()
+    for opt in settings.pay_options:
+        tokens = getattr(opt, "tokens", opt.get("tokens"))
+        price = getattr(opt, "price_rub", opt.get("price_rub"))
+        emoji = getattr(opt, "emoji", opt.get("emoji")) or ""
+        text = f"{emoji + ' ' if emoji else ''}{tokens} — {price} ₽"
+        kb.button(text=text, callback_data=f"buy:{tokens}")
+    kb.adjust(2)
+    kb.row(InlineKeyboardButton(text="🪙 Мой баланс", callback_data="open_balance"))
+    await msg.answer("Пополнение баланса", reply_markup=kb.as_markup())
+
+
+@router.callback_query(F.data.startswith("buy:"))
+async def cb_buy(call: CallbackQuery):
+    await call.answer("Покупка временно недоступна", show_alert=True)
 
 
 @router.message(Command("confirm"))

@@ -112,10 +112,10 @@ def _apply_billing(
     if cache_tokens is None:
         cache_tokens = storage.get_cache_tokens(user_id)
     billed = _billable_tokens(model, usage_in, usage_out, cache_tokens)
-
     billed = int(math.ceil(billed * settings.toki_spend_coeff))
     _spent_free, _spent_paid, deficit = storage.spend_tokens(user_id, billed)
     return billed, deficit
+
 
 
 async def summarize_chat(chat_id: int, *, model: str, sentences: int = 4) -> ChatReply:
@@ -176,6 +176,7 @@ async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
 
 
 
+
     r = await provider_chat(
         model=model,
         messages=messages,
@@ -194,6 +195,7 @@ async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
     cost_in, cost_out, cost_cache, cost_total = calc_usage_cost_rub(
         model, usage_in, usage_out, cache_before
     )
+
     return ChatReply(
 
         text=out_text,
@@ -228,6 +230,7 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[D
 
 
 
+
     async for ev in provider_stream(
         model=model,
         messages=messages,
@@ -248,6 +251,7 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[D
             cost_in, cost_out, cost_cache, cost_total = calc_usage_cost_rub(
                 model, usage_in, usage_out, cache_before
             )
+
             yield {
 
                 "kind": "final",

@@ -14,6 +14,24 @@ model_tariffs:
 
 toki_spend_coeff: 1.0
 
+pay_options:
+  - tokens: 100
+    price_rub: 64
+  - tokens: 250
+    price_rub: 119
+  - emoji: "💖"
+    tokens: 500
+    price_rub: 189
+  - tokens: 1000
+    price_rub: 309
+  - emoji: "💖"
+    tokens: 2000
+    price_rub: 559
+  - tokens: 5000
+    price_rub: 1049
+  - tokens: 10000
+    price_rub: 1899
+
 
 subs:
   free:
@@ -34,11 +52,14 @@ subs:
     fav_chats_max: 20
     fav_chars_max: 40
   nightly_toki_bonus:
-    free: 50000
-    silver: 150000
-    gold: 300000
+
+    free: 1000
+    silver: 1000
+    gold: 1000
+
 
 limits:
+  context_threshold_tokens: 60000
   proactive_enabled: true
   proactive_cost_tokens: 0     # >0 — проактивы после первых двух списывают токены
   auto_compress_default: true
