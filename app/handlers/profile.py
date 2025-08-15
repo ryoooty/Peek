@@ -259,7 +259,11 @@ async def cb_set_prompts(call: CallbackQuery):
     u = storage.get_user(call.from_user.id) or {}
     size = (u.get("default_resp_size") or "auto")
     order = ["small", "medium", "large", "auto"]  # в UI не показываем «длину», но вид промтов оставлен
-    nxt = order[(order.index(size) + 1) % len(order)]
+    try:
+        idx = order.index(size)
+    except ValueError:
+        idx = order.index("auto")
+    nxt = order[(idx + 1) % len(order)]
     storage.set_user_field(call.from_user.id, "default_resp_size", nxt)
     await cb_settings(call)
 
