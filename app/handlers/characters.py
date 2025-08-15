@@ -1,6 +1,7 @@
 # app/handlers/characters.py
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 from aiogram import Router, F
@@ -224,10 +225,11 @@ async def cb_char_fav(call: CallbackQuery):
 @router.callback_query(F.data.startswith("char:new:"))
 async def cb_char_new(call: CallbackQuery):
     char_id = int(call.data.split(":")[2])
+    await call.answer("Создаю чат…")
     chat_id = storage.create_chat(call.from_user.id, char_id)
     from app.handlers.chats import open_chat_inline
 
-    await open_chat_inline(call, chat_id=chat_id)
+    asyncio.create_task(open_chat_inline(call, chat_id=chat_id))
 
 
 @router.callback_query(F.data.startswith("char:cont:"))
