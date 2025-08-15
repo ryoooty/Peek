@@ -890,6 +890,32 @@ def daily_bonus_free_users() -> List[int]:
     return uids
 
 
+def expire_subscriptions() -> List[int]:
+    """Downgrade users whose subscription has expired.
+
+    Returns a list of affected user IDs.
+    """
+    col = "sub_expires_at"
+    try:
+        _q(f"SELECT {col} FROM users LIMIT 0")
+    except Exception:
+        col = "sub_end"
+    rows = _q(
+        f"""
+        SELECT tg_id FROM users
+         WHERE subscription <> 'free'
+           AND {col} IS NOT NULL
+           AND {col} < CURRENT_TIMESTAMP
+        """
+    ).fetchall()
+    uids: List[int] = []
+    for r in rows:
+        uid = int(r["tg_id"])
+        _exec(f"UPDATE users SET subscription='free', {col}=NULL WHERE tg_id=?", (uid,))
+        uids.append(uid)
+    return uids
+
+
 # ------------- Proactive helpers -------------
 def select_proactive_candidates() -> List[int]:
     """Return IDs of users eligible for proactive actions.
