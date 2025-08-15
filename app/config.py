@@ -65,6 +65,7 @@ class LimitsConfig(BaseModel):
     context_threshold_tokens: int = 60000
     proactive_enabled: bool = True
     request_timeout_seconds: int = 60
+    request_attempts: int = 3
     proactive_cost_tokens: int = 0  # стоимость 1 проактивного после 2 free в биллинговых токенах
     live_split_nl_count: int = 3
     auto_compress_default: bool = True
