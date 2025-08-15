@@ -36,14 +36,14 @@ def _char_card_caption(ch: dict) -> str:
 def _photo_input_for_char(ch: dict):
     """
     Возвращает FSInputFile, file_id(str) или None.
-    Приоритет: photo_id -> локальный файл (photo_path) -> None
+    Приоритет: локальный файл (photo_path) -> file_id -> None
     """
-    fid = (ch.get("photo_id") or "").strip()
-    if fid:
-        return fid
     p = (ch.get("photo_path") or "").strip()
     if p and Path(p).exists():
         return FSInputFile(p)
+    fid = (ch.get("photo_id") or "").strip()
+    if fid:
+        return fid
     return None
 
 

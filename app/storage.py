@@ -834,6 +834,9 @@ def list_token_log(user_id: int, limit: int = 10) -> List[Dict[str, Any]]:
 
 
 def add_toki(user_id: int, amount: int, meta: str = "bonus") -> None:
+    """Increase user's free_toki balance."""
+    if amount < 0:
+        raise ValueError("amount must be >= 0")
     _exec(
         "UPDATE users SET free_toki = free_toki + ? WHERE tg_id=?",
         (int(amount), user_id),
@@ -842,6 +845,9 @@ def add_toki(user_id: int, amount: int, meta: str = "bonus") -> None:
 
 
 def add_paid_tokens(user_id: int, amount: int, meta: str = "topup") -> None:
+    """Increase user's paid_tokens balance."""
+    if amount < 0:
+        raise ValueError("amount must be >= 0")
     _exec(
         "UPDATE users SET paid_tokens = paid_tokens + ? WHERE tg_id=?",
         (int(amount), user_id),
