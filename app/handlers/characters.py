@@ -196,13 +196,19 @@ async def cb_chars_menu(call: CallbackQuery):
 
 @router.callback_query(F.data.startswith("chars:page:"))
 async def cb_chars_page(call: CallbackQuery):
-    page = int(call.data.split(":")[2])
+    parts = call.data.split(":")
+    if len(parts) < 3 or not parts[2].isdigit():
+        return await call.answer("Некорректные данные", show_alert=True)
+    page = int(parts[2])
     await show_characters_page(call, page=page)
 
 
 @router.callback_query(F.data.startswith("char:open:"))
 async def cb_open_char(call: CallbackQuery):
-    char_id = int(call.data.split(":")[2])
+    parts = call.data.split(":")
+    if len(parts) < 3 or not parts[2].isdigit():
+        return await call.answer("Некорректные данные", show_alert=True)
+    char_id = int(parts[2])
     await open_character_card(call, char_id=char_id)
 
 
@@ -210,7 +216,10 @@ async def cb_open_char(call: CallbackQuery):
 async def cb_char_fav(call: CallbackQuery):
     from app.config import settings
 
-    char_id = int(call.data.split(":")[2])
+    parts = call.data.split(":")
+    if len(parts) < 3 or not parts[2].isdigit():
+        return await call.answer("Некорректные данные", show_alert=True)
+    char_id = int(parts[2])
     u = storage.get_user(call.from_user.id) or {}
     sub = (u.get("subscription") or "free").lower()
     limits = getattr(settings.subs, sub, settings.subs.free)
@@ -226,7 +235,10 @@ async def cb_char_fav(call: CallbackQuery):
 
 @router.callback_query(F.data.startswith("char:new:"))
 async def cb_char_new(call: CallbackQuery):
-    char_id = int(call.data.split(":")[2])
+    parts = call.data.split(":")
+    if len(parts) < 3 or not parts[2].isdigit():
+        return await call.answer("Некорректные данные", show_alert=True)
+    char_id = int(parts[2])
     await call.answer("Создаю чат…")
     chat_id = storage.create_chat(call.from_user.id, char_id)
     from app.handlers.chats import open_chat_inline
@@ -236,7 +248,10 @@ async def cb_char_new(call: CallbackQuery):
 
 @router.callback_query(F.data.startswith("char:cont:"))
 async def cb_char_cont(call: CallbackQuery):
-    char_id = int(call.data.split(":")[2])
+    parts = call.data.split(":")
+    if len(parts) < 3 or not parts[2].isdigit():
+        return await call.answer("Некорректные данные", show_alert=True)
+    char_id = int(parts[2])
     rows = storage.list_user_chats_by_char(call.from_user.id, char_id, limit=1)
     if not rows:
         await call.answer("Нет чатов с персонажем", show_alert=True)
@@ -248,7 +263,10 @@ async def cb_char_cont(call: CallbackQuery):
 
 @router.callback_query(F.data.startswith("char:chats:"))
 async def cb_char_chats(call: CallbackQuery):
-    char_id = int(call.data.split(":")[2])
+    parts = call.data.split(":")
+    if len(parts) < 3 or not parts[2].isdigit():
+        return await call.answer("Некорректные данные", show_alert=True)
+    char_id = int(parts[2])
     rows = storage.list_user_chats_by_char(call.from_user.id, char_id, limit=10)
     if not rows:
         await call.answer("Чатов пока нет.", show_alert=True)
@@ -271,7 +289,10 @@ async def cb_char_chats(call: CallbackQuery):
 
 @router.callback_query(F.data.startswith("char:settings:"))
 async def cb_char_settings(call: CallbackQuery):
-    char_id = int(call.data.split(":")[2])
+    parts = call.data.split(":")
+    if len(parts) < 3 or not parts[2].isdigit():
+        return await call.answer("Некорректные данные", show_alert=True)
+    char_id = int(parts[2])
     ch = storage.get_character(char_id)
     if not ch:
         return await call.answer("Персонаж не найден", show_alert=True)

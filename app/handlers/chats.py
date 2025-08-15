@@ -66,7 +66,10 @@ async def cmd_chats(msg: Message):
 
 @router.callback_query(F.data.startswith("chats:page:"))
 async def cb_chats_page(call: CallbackQuery):
-    page = int(call.data.split(":")[2])
+    parts = call.data.split(":")
+    if len(parts) < 3 or not parts[2].isdigit():
+        return await call.answer("Некорректные данные", show_alert=True)
+    page = int(parts[2])
     await list_chats(call, page=page)
 
 
@@ -108,7 +111,10 @@ async def open_chat_inline(msg_or_call: Message | CallbackQuery, *, chat_id: int
 # ---- Inline actions ----
 @router.callback_query(F.data.startswith("chat:open:"))
 async def cb_open_chat(call: CallbackQuery):
-    chat_id = int(call.data.split(":")[2])
+    parts = call.data.split(":")
+    if len(parts) < 3 or not parts[2].isdigit():
+        return await call.answer("Некорректные данные", show_alert=True)
+    chat_id = int(parts[2])
     await open_chat_inline(call, chat_id=chat_id)
 
 
@@ -119,7 +125,10 @@ async def cb_continue_chat(call: CallbackQuery):
 
 @router.callback_query(F.data.startswith("chat:what:"))
 async def cb_what(call: CallbackQuery):
-    chat_id = int(call.data.split(":")[2])
+    parts = call.data.split(":")
+    if len(parts) < 3 or not parts[2].isdigit():
+        return await call.answer("Некорректные данные", show_alert=True)
+    chat_id = int(parts[2])
     try:
         await call.answer("Думаю…")
         await call.message.bot.send_chat_action(call.message.chat.id, ChatAction.TYPING)
@@ -138,7 +147,10 @@ async def cb_what(call: CallbackQuery):
 
 @router.callback_query(F.data.startswith("chat:fav:"))
 async def cb_fav(call: CallbackQuery):
-    chat_id = int(call.data.split(":")[2])
+    parts = call.data.split(":")
+    if len(parts) < 3 or not parts[2].isdigit():
+        return await call.answer("Некорректные данные", show_alert=True)
+    chat_id = int(parts[2])
     lim = _limits_for(call.from_user.id)
     ok = storage.toggle_fav_chat(call.from_user.id, chat_id, allow_max=lim.fav_chats_max)
     if not ok:
@@ -148,7 +160,10 @@ async def cb_fav(call: CallbackQuery):
 
 @router.callback_query(F.data.startswith("chat:export:"))
 async def cb_export(call: CallbackQuery):
-    chat_id = int(call.data.split(":")[2])
+    parts = call.data.split(":")
+    if len(parts) < 3 or not parts[2].isdigit():
+        return await call.answer("Некорректные данные", show_alert=True)
+    chat_id = int(parts[2])
     txt = storage.export_chat_txt(chat_id)
     await safe_edit_text(
         call.message,
@@ -166,7 +181,10 @@ async def cb_export(call: CallbackQuery):
 
 @router.callback_query(F.data.startswith("chat:import:"))
 async def cb_import(call: CallbackQuery, state: FSMContext):
-    chat_id = int(call.data.split(":")[2])
+    parts = call.data.split(":")
+    if len(parts) < 3 or not parts[2].isdigit():
+        return await call.answer("Некорректные данные", show_alert=True)
+    chat_id = int(parts[2])
     await state.set_state(ChatSG.importing)
     await state.update_data(chat_id=chat_id)
     await safe_edit_text(
@@ -224,7 +242,10 @@ async def import_doc(msg: Message, state: FSMContext):
 
 @router.callback_query(F.data.startswith("chat:del:"))
 async def cb_del(call: CallbackQuery):
-    chat_id = int(call.data.split(":")[2])
+    parts = call.data.split(":")
+    if len(parts) < 3 or not parts[2].isdigit():
+        return await call.answer("Некорректные данные", show_alert=True)
+    chat_id = int(parts[2])
     kb = InlineKeyboardBuilder()
     kb.button(text="❌ Да, удалить", callback_data=f"chat:delok:{chat_id}")
     kb.button(text="⬅ Отмена", callback_data=f"chat:open:{chat_id}")
@@ -235,7 +256,10 @@ async def cb_del(call: CallbackQuery):
 
 @router.callback_query(F.data.startswith("chat:delok:"))
 async def cb_delok(call: CallbackQuery):
-    chat_id = int(call.data.split(":")[2])
+    parts = call.data.split(":")
+    if len(parts) < 3 or not parts[2].isdigit():
+        return await call.answer("Некорректные данные", show_alert=True)
+    chat_id = int(parts[2])
     if storage.delete_chat(chat_id, call.from_user.id):
         kb = InlineKeyboardBuilder()
         kb.button(text="⬅ Назад", callback_data="chars:menu")
