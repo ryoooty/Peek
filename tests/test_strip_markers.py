@@ -60,18 +60,18 @@ def test_chatting_text_strips_markers_rp(monkeypatch):
     assert "/n/" not in captured["text"]
 
 
-def test_chatting_text_strips_markers_live(monkeypatch):
+def test_chatting_text_strips_markers_chat(monkeypatch):
     monkeypatch.setattr(chats_module, "_typing_loop", dummy_typing_loop)
-    monkeypatch.setattr(chats_module, "storage", _make_storage("live"))
+    monkeypatch.setattr(chats_module, "storage", _make_storage("chat"))
     monkeypatch.setattr(chats_module, "schedule_silence_check", lambda *a, **k: None)
 
     captured = {}
 
-    async def fake_live_stream(user_id, chat_id, text):
+    async def fake_chat_stream(user_id, chat_id, text):
         captured["text"] = text
         yield {"kind": "final", "usage_in": "0", "usage_out": "0", "cost_total": "0", "deficit": "0"}
 
-    monkeypatch.setattr(chats_module, "live_stream", fake_live_stream)
+    monkeypatch.setattr(chats_module, "chat_stream", fake_chat_stream)
 
     msg = DummyMessage("/s/Hello/n/")
     asyncio.run(chats_module.chatting_text(msg))

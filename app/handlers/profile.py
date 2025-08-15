@@ -8,7 +8,11 @@ from aiogram.types import CallbackQuery, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from app import storage
-from app.config import settings
+import sys
+
+
+def _settings():
+    return sys.modules["app.config"].settings
 from app.scheduler import rebuild_user_jobs
 from app.handlers.balance import _balance_text
 from app.utils.tz import tz_keyboard
@@ -42,16 +46,17 @@ def _profile_text(u: dict) -> str:
         len(storage.list_user_chats(uid, page=1, page_size=9999)) if uid else 0
     )
 
-    model = (u.get("default_model") or settings.default_model)
-    live_on = bool(u.get("proactive_enabled") or 0)
+    s = _settings()
+    model = (u.get("default_model") or s.default_model)
+    chat_on = bool(u.get("proactive_enabled") or 0)
     per_day = int(u.get("pro_per_day") or 2)
     gap_min = int(u.get("pro_min_gap_min") or 10)
-    auto_cmp = settings.limits.auto_compress_default
+    auto_cmp = s.limits.auto_compress_default
     return (
         "<b>Профиль</b>\n"
         f"Подписка: <b>{sub}</b>\n"
         f"Модель: <b>{model}</b>\n"
-        f"Режим Live: {'🟢 Вкл' if live_on else '⚪ Выкл'}\n"
+        f"Режим Чат: {'🟢 Вкл' if chat_on else '⚪ Выкл'}\n"
         f"Автосжатие: {'🗜 Вкл' if auto_cmp else '⚪ Выкл'}\n"
         f"Нуджей в сутки: <b>{per_day}</b>\n"
         f"Мин. интервал: <b>{gap_min} мин</b>\n\n"
@@ -66,7 +71,8 @@ def _profile_text(u: dict) -> str:
 def _profile_kb(u: dict):
     kb = InlineKeyboardBuilder()
     # 1 — модель
-    kb.button(text=f"🤖 Модель: {u.get('default_model') or settings.default_model}", callback_data="prof:model")
+    s = _settings()
+    kb.button(text=f"🤖 Модель: {u.get('default_model') or s.default_model}", callback_data="prof:model")
     # 2 — токи
     kb.button(text="🪙 Токи", callback_data="prof:balance")
     # 3 — режим общения
@@ -88,8 +94,9 @@ async def show_profile(msg: Message):
 @router.callback_query(F.data == "prof:model")
 async def cb_model(call: CallbackQuery):
     u = storage.get_user(call.from_user.id) or {}
-    models = list(settings.model_tariffs)
-    cur = u.get("default_model") or settings.default_model
+    s = _settings()
+    models = list(s.model_tariffs)
+    cur = u.get("default_model") or s.default_model
     try:
         idx = models.index(cur)
     except ValueError:
@@ -128,7 +135,7 @@ async def cb_sub(call: CallbackQuery):
 @router.callback_query(F.data == "prof:mode")
 async def cb_mode(call: CallbackQuery):
     u = storage.get_user(call.from_user.id) or {}
-    new_mode = "live" if (u.get("default_chat_mode") or "rp") == "rp" else "rp"
+    new_mode = "chat" if (u.get("default_chat_mode") or "rp") == "rp" else "rp"
     storage.set_user_field(call.from_user.id, "default_chat_mode", new_mode)
     u = storage.get_user(call.from_user.id) or {}
     await safe_edit_text(call.message, _profile_text(u), reply_markup=_profile_kb(u))
@@ -141,8 +148,9 @@ async def cb_settings(call: CallbackQuery):
     kb = InlineKeyboardBuilder()
     # Убрали «📏 Длина ответов» (везде Авто). Остальное — как было.
     kb.button(text=f"🧩 Вид промтов ({u.get('default_resp_size') or 'auto'})", callback_data="set:prompts")
-    kb.button(text="🗜 Автосжатие: {}".format('вкл' if settings.limits.auto_compress_default else 'выкл'), callback_data="set:compress")
-    kb.button(text="⚡ Настройка Live", callback_data="set:live")
+    s = _settings()
+    kb.button(text="🗜 Автосжатие: {}".format('вкл' if s.limits.auto_compress_default else 'выкл'), callback_data="set:compress")
+    kb.button(text="⚡ Настройка Чата", callback_data="set:chat")
     kb.button(text="🌍 Часовой пояс", callback_data="set:tz")
     kb.button(text="⬅ Назад", callback_data="prof:back")
     kb.adjust(1)
@@ -162,42 +170,42 @@ async def cb_back(call: CallbackQuery):
     await call.answer()
 
 
-# ---- Live Settings (как было, без «длины ответов») ----
+# ---- Chat Settings (как было, без «длины ответов») ----
 
-@router.callback_query(F.data == "set:live")
-async def cb_set_live(call: CallbackQuery):
+@router.callback_query(F.data == "set:chat")
+async def cb_set_chat(call: CallbackQuery):
     u = storage.get_user(call.from_user.id) or {}
 
-    live_on = bool(u.get("proactive_enabled") or 0)
+    chat_on = bool(u.get("proactive_enabled") or 0)
     kb = InlineKeyboardBuilder()
-    kb.button(text=("🟢 Выключить Live" if live_on else "🟢 Включить Live"), callback_data="set:live:toggle")
-    kb.button(text=f"В день: {int(u.get('pro_per_day') or 2)}", callback_data="set:live:per")
-    kb.button(text=f"Окно: {u.get('pro_window_local') or '09:00-21:00'}", callback_data="set:live:win")
-    kb.button(text=f"Пауза: {int(u.get('pro_min_gap_min') or 10)} мин", callback_data="set:live:gap")
-    kb.button(text=f"Макс. интервал: {int(u.get('pro_max_delay_min') or 240)} мин", callback_data="set:live:max")
+    kb.button(text=("🟢 Выключить Чат" if chat_on else "🟢 Включить Чат"), callback_data="set:chat:toggle")
+    kb.button(text=f"В день: {int(u.get('pro_per_day') or 2)}", callback_data="set:chat:per")
+    kb.button(text=f"Окно: {u.get('pro_window_local') or '09:00-21:00'}", callback_data="set:chat:win")
+    kb.button(text=f"Пауза: {int(u.get('pro_min_gap_min') or 10)} мин", callback_data="set:chat:gap")
+    kb.button(text=f"Макс. интервал: {int(u.get('pro_max_delay_min') or 240)} мин", callback_data="set:chat:max")
     kb.button(text="⬅ Назад", callback_data="prof:settings")
     kb.adjust(1)
 
     await safe_edit_text(
         call.message,
-        "Настройка Live:\n— Сообщения по случайным таймингам в течение суток.\n— Можно включить/выключить и настроить частоту.",
+        "Настройка Чата:\n— Сообщения по случайным таймингам в течение суток.\n— Можно включить/выключить и настроить частоту.",
         reply_markup=kb.as_markup(),
     )
     await call.answer()
 
 
-@router.callback_query(F.data == "set:live:toggle")
-async def cb_set_live_toggle(call: CallbackQuery):
+@router.callback_query(F.data == "set:chat:toggle")
+async def cb_set_chat_toggle(call: CallbackQuery):
     u = storage.get_user(call.from_user.id) or {}
-    live_on = 0 if (u.get("proactive_enabled") or 0) else 1
-    storage.set_user_field(call.from_user.id, "proactive_enabled", live_on)
+    chat_on = 0 if (u.get("proactive_enabled") or 0) else 1
+    storage.set_user_field(call.from_user.id, "proactive_enabled", chat_on)
     rebuild_user_jobs(call.from_user.id)
     # Сейчас окно не используется планировщиком, но оставим UI — совместимость.
-    await cb_set_live(call)
+    await cb_set_chat(call)
 
 
-@router.callback_query(F.data == "set:live:per")
-async def cb_set_live_per(call: CallbackQuery):
+@router.callback_query(F.data == "set:chat:per")
+async def cb_set_chat_per(call: CallbackQuery):
     u = storage.get_user(call.from_user.id) or {}
     # Цикл значений: 2→3→5→1→2
     val = int(u.get("pro_per_day") or 2)
@@ -208,11 +216,11 @@ async def cb_set_live_per(call: CallbackQuery):
         nxt = 2
     storage.set_user_field(call.from_user.id, "pro_per_day", nxt)
     rebuild_user_jobs(call.from_user.id)
-    await cb_set_live(call)
+    await cb_set_chat(call)
 
 
-@router.callback_query(F.data == "set:live:win")
-async def cb_set_live_win(call: CallbackQuery):
+@router.callback_query(F.data == "set:chat:win")
+async def cb_set_chat_win(call: CallbackQuery):
     # UI сохраним, но планировщик окна не использует.
     u = storage.get_user(call.from_user.id) or {}
     win = (u.get("pro_window_local") or "09:00-21:00")
@@ -236,12 +244,12 @@ async def cb_set_live_win(call: CallbackQuery):
         return f"{fmt(da)}-{fmt(db)}"
     storage.set_user_field(call.from_user.id, "pro_window_utc", _to_utc(nxt))
     rebuild_user_jobs(call.from_user.id)
-    await cb_set_live(call)
+    await cb_set_chat(call)
 
 
 
-@router.callback_query(F.data == "set:live:gap")
-async def cb_set_live_gap(call: CallbackQuery):
+@router.callback_query(F.data == "set:chat:gap")
+async def cb_set_chat_gap(call: CallbackQuery):
     u = storage.get_user(call.from_user.id) or {}
     val = int(u.get("pro_min_gap_min") or 10)
     cycle = [5, 10, 15, 30, 60, 120]
@@ -250,11 +258,11 @@ async def cb_set_live_gap(call: CallbackQuery):
     except ValueError:
         nxt = 10
     storage.set_user_field(call.from_user.id, "pro_min_gap_min", nxt)
-    await cb_set_live(call)
+    await cb_set_chat(call)
 
 
-@router.callback_query(F.data == "set:live:max")
-async def cb_set_live_max(call: CallbackQuery):
+@router.callback_query(F.data == "set:chat:max")
+async def cb_set_chat_max(call: CallbackQuery):
     u = storage.get_user(call.from_user.id) or {}
     val = int(u.get("pro_max_delay_min") or 240)
     cycle = [60, 120, 180, 240, 360, 720]
@@ -263,7 +271,7 @@ async def cb_set_live_max(call: CallbackQuery):
     except ValueError:
         nxt = 240
     storage.set_user_field(call.from_user.id, "pro_max_delay_min", nxt)
-    await cb_set_live(call)
+    await cb_set_chat(call)
 
 
     
@@ -287,7 +295,8 @@ async def cb_set_prompts(call: CallbackQuery):
 
 @router.callback_query(F.data == "set:compress")
 async def cb_set_compress(call: CallbackQuery):
-    settings.limits.auto_compress_default = not settings.limits.auto_compress_default
+    s = _settings()
+    s.limits.auto_compress_default = not s.limits.auto_compress_default
     await cb_settings(call)
 
 

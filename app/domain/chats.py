@@ -217,9 +217,9 @@ async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
     )
 
 
-async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[Dict[str, str], None]:
+async def chat_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[Dict[str, str], None]:
     """
-    Live-режим: отдаём сырые дельты текста + финальные usage.
+    Чат-режим: отдаём сырые дельты текста + финальные usage.
     Хендлер агрегирует в буфер и нарезает на сообщения.
     """
     user = storage.get_user(user_id) or {}
@@ -273,7 +273,7 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[D
                     "cost_total": f"{cost_total}",
                 }
     except Exception:
-        logger.exception("live_stream failed")
+        logger.exception("chat_stream failed")
         storage.set_user_chatting(user_id, False)
         yield {
             "kind": "final",

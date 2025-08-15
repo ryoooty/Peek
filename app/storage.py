@@ -103,7 +103,7 @@ def _migrate() -> None:
         default_resp_size   TEXT DEFAULT 'auto',
         default_model       TEXT,
 
-        -- Live
+        -- Chat
         proactive_enabled    INTEGER DEFAULT 1,
         pro_per_day          INTEGER DEFAULT 2,      -- дефолт: 2 раза/сутки
         pro_min_gap_min      INTEGER DEFAULT 10,     -- дефолт: 10 минут
@@ -305,6 +305,10 @@ def _migrate() -> None:
         created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
     )"""
     )
+
+    # Rename legacy mode label
+    _exec("UPDATE users SET default_chat_mode = 'chat' WHERE default_chat_mode = 'live'")
+    _exec("UPDATE chats SET mode = 'chat' WHERE mode = 'live'")
 
 
 # ------------- Users -------------
