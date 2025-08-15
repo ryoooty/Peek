@@ -93,26 +93,8 @@ def rebuild_user_jobs(user_id: int) -> None:
     if not _scheduler:
         return
 
-    # удалить старые джобы пользователя
-    try:
-        for j in list(_scheduler.get_jobs()):  # type: ignore
-            if not j.id:
-                continue
-            if j.id.startswith(f"nudge:{user_id}:") or j.id.startswith(
-                f"silence:{user_id}:"
-            ):
-                try:
-                    _scheduler.remove_job(j.id)
-                except Exception:
-                    pass
-    except Exception:
-        pass
-    _user_jobs.pop(user_id, None)
-
-    # пересоздать план, только если Live включён
-    u = storage.get_user(user_id) or {}
-    if int(u.get("proactive_enabled") or 0) == 1:
-        _plan_daily(user_id)
+    # всегда очищаем и, если Live включён, создаём новый план
+    _plan_daily(user_id)
 
 
 # ---------------- Internal helpers/jobs ----------------
@@ -198,6 +180,31 @@ def rebuild_all_window_jobs() -> None:
         return
     for uid in storage.select_proactive_candidates():
         schedule_window_jobs_for_user(uid)
+
+
+def _plan_daily(user_id: int) -> None:
+    """Очистить старые джобы и запланировать следующую."""
+    if not _scheduler:
+        return
+
+    # удалить старые джобы пользователя
+    try:
+        for j in list(_scheduler.get_jobs()):  # type: ignore
+            if not j.id:
+                continue
+            if j.id.startswith(f"nudge:{user_id}:") or j.id.startswith(
+                f"silence:{user_id}:"
+            ):
+                try:
+                    _scheduler.remove_job(j.id)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    _user_jobs.pop(user_id, None)
+
+    # поставить следующий тайминг
+    _schedule_next(user_id)
 
 
 def _on_window_start(user_id: int) -> None:
