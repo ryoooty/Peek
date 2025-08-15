@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import threading
 import time
 import re
 from datetime import datetime, timezone, timedelta
@@ -16,6 +17,7 @@ sqlite3.register_converter("BOOLEAN", lambda v: bool(int(v)))
 _conn: sqlite3.Connection | None = None
 _conn_path: Path | None = None
 _stats_cache: Dict[str, Tuple[float, Any]] = {}
+_conn_lock = threading.Lock()
 
 
 
@@ -870,8 +872,9 @@ def user_totals(user_id: int) -> Dict[str, Any]:
 
 
 # ------------- Billing (toki/tokens) -------------
-def _log_token(user_id: int, amount: int, meta: str) -> None:
-    _exec(
+def _log_token(cur: sqlite3.Cursor, user_id: int, amount: int, meta: str) -> None:
+    """Persist a token balance change inside an open transaction."""
+    cur.execute(
         "INSERT INTO token_log(user_id, amount, meta) VALUES (?,?,?)",
         (user_id, int(amount), meta),
     )
@@ -889,22 +892,32 @@ def add_toki(user_id: int, amount: int, meta: str = "bonus") -> None:
     """Increase user's free_toki balance."""
     if amount < 0:
         raise ValueError("amount must be >= 0")
-    _exec(
-        "UPDATE users SET free_toki = free_toki + ? WHERE tg_id=?",
-        (int(amount), user_id),
-    )
-    _log_token(user_id, int(amount), meta)
+    assert _conn is not None
+    with _conn_lock:
+        cur = _conn.cursor()
+        cur.execute("BEGIN IMMEDIATE")
+        cur.execute(
+            "UPDATE users SET free_toki = free_toki + ? WHERE tg_id=?",
+            (int(amount), user_id),
+        )
+        _log_token(cur, user_id, int(amount), meta)
+        _conn.commit()
 
 
 def add_paid_tokens(user_id: int, amount: int, meta: str = "topup") -> None:
     """Increase user's paid_tokens balance."""
     if amount < 0:
         raise ValueError("amount must be >= 0")
-    _exec(
-        "UPDATE users SET paid_tokens = paid_tokens + ? WHERE tg_id=?",
-        (int(amount), user_id),
-    )
-    _log_token(user_id, int(amount), meta)
+    assert _conn is not None
+    with _conn_lock:
+        cur = _conn.cursor()
+        cur.execute("BEGIN IMMEDIATE")
+        cur.execute(
+            "UPDATE users SET paid_tokens = paid_tokens + ? WHERE tg_id=?",
+            (int(amount), user_id),
+        )
+        _log_token(cur, user_id, int(amount), meta)
+        _conn.commit()
 
 
 
@@ -926,27 +939,39 @@ def spend_tokens(user_id: int, amount: int) -> Tuple[int, int, int]:
     Списать amount биллинговых токенов: сначала free_toki, затем paid_tokens.
     Возвращает (spent_free, spent_paid, deficit). Если не хватило — deficit > 0 (ответ всё равно отправляется).
     """
-    u = get_user(user_id) or {}
-    ft = int(u.get("free_toki") or 0)
-    pt = int(u.get("paid_tokens") or 0)
-    need = int(max(0, amount))
-    use_free = min(ft, need)
-    need -= use_free
-    use_paid = min(pt, need)
-    need -= use_paid
-    if use_free:
-        _exec(
-            "UPDATE users SET free_toki = free_toki - ? WHERE tg_id=?",
-            (use_free, user_id),
-        )
-        _log_token(user_id, -use_free, "spend_free")
-    if use_paid:
-        _exec(
-            "UPDATE users SET paid_tokens = paid_tokens - ? WHERE tg_id=?",
-            (use_paid, user_id),
-        )
-        _log_token(user_id, -use_paid, "spend_paid")
-    return use_free, use_paid, need  # need==deficit
+    assert _conn is not None
+    with _conn_lock:
+        cur = _conn.cursor()
+        cur.execute("BEGIN IMMEDIATE")
+
+        row = cur.execute(
+            "SELECT free_toki, paid_tokens FROM users WHERE tg_id=?",
+            (user_id,),
+        ).fetchone()
+        ft = int(row["free_toki"] if row else 0)
+        pt = int(row["paid_tokens"] if row else 0)
+
+        need = int(max(0, amount))
+        use_free = min(ft, need)
+        need -= use_free
+        use_paid = min(pt, need)
+        need -= use_paid
+
+        if use_free:
+            cur.execute(
+                "UPDATE users SET free_toki = free_toki - ? WHERE tg_id=?",
+                (use_free, user_id),
+            )
+            _log_token(cur, user_id, -use_free, "spend_free")
+        if use_paid:
+            cur.execute(
+                "UPDATE users SET paid_tokens = paid_tokens - ? WHERE tg_id=?",
+                (use_paid, user_id),
+            )
+            _log_token(cur, user_id, -use_paid, "spend_paid")
+
+        _conn.commit()
+        return use_free, use_paid, need  # need==deficit
 
 
 # Ночной бонус «токов»
