@@ -521,9 +521,11 @@ def create_chat(
         (user_id, char_id),
     ).fetchone()
     seq_no = int((r["c"] or 0) + 1)
+    params = (user_id, char_id, mode, resp_size, seq_no)
+    assert len(params) == 5
     cur = _exec(
         "INSERT INTO chats(user_id,char_id,mode,resp_size,seq_no) VALUES (?,?,?,?,?)",
-        (user_id, char_id, mode, resp_size, seq_no),
+        params,
     )
     return int(cur.lastrowid)
 
