@@ -165,7 +165,8 @@ def _migrate() -> None:
         seq_no        INTEGER,
         is_favorite   INTEGER DEFAULT 0,
         created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+        updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+        cache_tokens  INTEGER DEFAULT 0
     )"""
     )
 
@@ -183,6 +184,8 @@ def _migrate() -> None:
     )
     if not _has_col("chats", "is_favorite"):
         _exec("ALTER TABLE chats ADD COLUMN is_favorite INTEGER DEFAULT 0")
+    if not _has_col("chats", "cache_tokens"):
+        _exec("ALTER TABLE chats ADD COLUMN cache_tokens INTEGER DEFAULT 0")
 
     # messages
     _exec(
@@ -938,6 +941,20 @@ def get_cache_tokens(user_id: int) -> int:
     """Return accumulated cache tokens for user."""
     u = get_user(user_id) or {}
     return int(u.get("cache_tokens") or 0)
+
+
+def add_chat_cache_tokens(chat_id: int, amount: int) -> None:
+    """Increment cache tokens for a specific chat."""
+    _exec(
+        "UPDATE chats SET cache_tokens = COALESCE(cache_tokens,0) + ? WHERE id=?",
+        (int(amount), chat_id),
+    )
+
+
+def get_chat_cache_tokens(chat_id: int) -> int:
+    """Return accumulated cache tokens for a chat."""
+    r = _q("SELECT cache_tokens FROM chats WHERE id=?", (chat_id,)).fetchone()
+    return int(r["cache_tokens"] or 0) if r else 0
 
 
 def spend_tokens(user_id: int, amount: int) -> Tuple[int, int, int]:
