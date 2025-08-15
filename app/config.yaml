@@ -32,6 +32,7 @@ pay_options:
   - tokens: 10000
     price_rub: 1899
 
+
 subs:
   free:
     chats_page_size: 10
@@ -51,9 +52,11 @@ subs:
     fav_chats_max: 20
     fav_chars_max: 40
   nightly_toki_bonus:
+
     free: 1000
     silver: 1000
     gold: 1000
+
 
 limits:
   context_threshold_tokens: 60000

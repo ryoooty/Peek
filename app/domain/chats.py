@@ -117,6 +117,7 @@ def _apply_billing(
     return billed, deficit
 
 
+
 async def summarize_chat(chat_id: int, *, model: str, sentences: int = 4) -> ChatReply:
     msgs = storage.list_messages(chat_id, limit=40)
     parts: List[str] = []
@@ -175,6 +176,7 @@ async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
 
 
 
+
     r = await provider_chat(
         model=model,
         messages=messages,
@@ -193,6 +195,7 @@ async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
     cost_in, cost_out, cost_cache, cost_total = calc_usage_cost_rub(
         model, usage_in, usage_out, cache_before
     )
+
     return ChatReply(
 
         text=out_text,
@@ -227,6 +230,7 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[D
 
 
 
+
     async for ev in provider_stream(
         model=model,
         messages=messages,
@@ -247,6 +251,7 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[D
             cost_in, cost_out, cost_cache, cost_total = calc_usage_cost_rub(
                 model, usage_in, usage_out, cache_before
             )
+
             yield {
 
                 "kind": "final",
