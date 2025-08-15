@@ -60,7 +60,7 @@ def init(bot: Bot) -> None:
 
     # Ежеминутный тик на случай подвисших/забытых пользователей:
 
-    # Если у юзера включён Live и нет будущих джоб — создадим суточный план.
+    # Если у юзера включён Чат и нет будущих джоб — создадим суточный план.
     _add_job("proactive:tick", "interval", minutes=1, func=_tick_fill_plans)
     _add_job("bonus:daily", "cron", hour=0, minute=5, func=_daily_bonus)
     _add_job("subs:expire", "cron", hour=0, minute=10, func=_subs_expire)
@@ -98,15 +98,15 @@ def schedule_silence_check(user_id: int, chat_id: int, delay_sec: int = 600) -> 
     _user_jobs[user_id] = [jid]
 
 def rebuild_user_jobs(user_id: int) -> None:
-    """Пересобрать или очистить суточный план Live для пользователя.
+    """Пересобрать или очистить суточный план чата для пользователя.
 
     Удаляет все существующие джобы пользователя (nudge и silence) и,
-    при активном режиме Live — создаёт новый дневной план.
+    при активном режиме Чата — создаёт новый дневной план.
     """
     if not _scheduler:
         return
 
-    # всегда очищаем и, если Live включён, создаём новый план
+    # всегда очищаем и, если Чат включён, создаём новый план
     _plan_daily(user_id)
 
 
@@ -323,7 +323,7 @@ def _schedule_next(user_id: int, delay_sec: Optional[int] = None) -> None:
 
 async def _tick_fill_plans():
     """
-    Раз в минуту: если у юзера Live включён и будущих джоб нет — создадим новый тайминг.
+    Раз в минуту: если у юзера Чат включён и будущих джоб нет — создадим новый тайминг.
     (Мягкий автозапуск, чтобы план не «забывался».)
     """
     if not _scheduler:

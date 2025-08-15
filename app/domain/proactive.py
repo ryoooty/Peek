@@ -7,7 +7,7 @@ from aiogram import Bot
 
 from app import storage
 from app.config import settings
-from app.character import LIVE_STYLE
+from app.character import CHAT_STYLE
 from app.providers.deepseek_openai import chat as provider_chat
 
 
@@ -46,7 +46,7 @@ async def proactive_nudge(*, bot: Bot, user_id: int, chat_id: int) -> Optional[s
     if not chat or int(chat.get("user_id") or 0) != user_id:
         return None
 
-    # Контекст: последние 8 сообщений + системная подсказка Live
+    # Контекст: последние 8 сообщений + системная подсказка чата
     msgs = storage.list_messages(chat_id, limit=16)
     context = []
     for m in msgs[-8:]:
@@ -54,7 +54,7 @@ async def proactive_nudge(*, bot: Bot, user_id: int, chat_id: int) -> Optional[s
         context.append(f"{who}: {m['content']}")
 
     sys = (
-        LIVE_STYLE
+        CHAT_STYLE
         + "\nНапиши дружелюбное короткое сообщение-продолжение диалога (1–3 предложения), "
         "без извинений и служебных фраз, без смайлов, если их не было. "
         "Сохраняй характер персонажа. Избегай повторов предыдущих фраз."
