@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
+import logging
 from typing import AsyncGenerator, Dict, List, Tuple
 
 from app import storage
@@ -10,7 +11,7 @@ from app.character import get_system_prompt_for_chat
 from app.providers.deepseek_openai import chat as provider_chat, stream_chat as provider_stream
 from app.billing.pricing import calc_usage_cost_rub
 
-
+logger = logging.getLogger(__name__)
 
 @dataclass
 class ChatReply:
@@ -240,37 +241,50 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[D
 
 
 
-    async for ev in provider_stream(
-        model=model,
-        messages=messages,
-        temperature=0.7,
-        max_tokens=toks_limit,
+    try:
+        async for ev in provider_stream(
+            model=model,
+            messages=messages,
+            temperature=0.7,
+            max_tokens=toks_limit,
+            timeout_s=settings.limits.request_timeout_seconds,
+        ):
+            if ev.get("type") == "delta":
+                yield {"kind": "chunk", "text": ev.get("text") or ""}
+            elif ev.get("type") == "usage":
+                usage_in = int(ev.get("in") or 0)
+                usage_out = int(ev.get("out") or 0)
+                billed, deficit = _apply_billing(
+                    user_id, model, usage_in, usage_out, cache_before
+                )
+                storage.add_cache_tokens(user_id, usage_in + usage_out)
+                cost_in, cost_out, cost_cache, cost_total = calc_usage_cost_rub(
+                    model, usage_in, usage_out, cache_before
+                )
 
-        timeout_s=settings.limits.request_timeout_seconds,
-    ):
-        if ev.get("type") == "delta":
-            yield {"kind": "chunk", "text": ev.get("text") or ""}
-        elif ev.get("type") == "usage":
-            usage_in = int(ev.get("in") or 0)
-            usage_out = int(ev.get("out") or 0)
-            billed, deficit = _apply_billing(
-                user_id, model, usage_in, usage_out, cache_before
-            )
-            storage.add_cache_tokens(user_id, usage_in + usage_out)
-            cost_in, cost_out, cost_cache, cost_total = calc_usage_cost_rub(
-                model, usage_in, usage_out, cache_before
-            )
-
-            yield {
-
-                "kind": "final",
-                "usage_in": str(usage_in),
-                "usage_out": str(usage_out),
-                "billed": str(billed),
-
-                "deficit": str(deficit),
-                "cost_in": f"{cost_in}",
-                "cost_out": f"{cost_out}",
-                "cost_cache": f"{cost_cache}",
-                "cost_total": f"{cost_total}",
-            }
+                yield {
+                    "kind": "final",
+                    "usage_in": str(usage_in),
+                    "usage_out": str(usage_out),
+                    "billed": str(billed),
+                    "deficit": str(deficit),
+                    "cost_in": f"{cost_in}",
+                    "cost_out": f"{cost_out}",
+                    "cost_cache": f"{cost_cache}",
+                    "cost_total": f"{cost_total}",
+                }
+    except Exception:
+        logger.exception("live_stream failed")
+        storage.set_user_chatting(user_id, False)
+        yield {
+            "kind": "final",
+            "text": "⚠ Что-то пошло не так. Попробуйте ещё раз.",
+            "usage_in": "0",
+            "usage_out": "0",
+            "billed": "0",
+            "deficit": "0",
+            "cost_in": "0",
+            "cost_out": "0",
+            "cost_cache": "0",
+            "cost_total": "0",
+        }
