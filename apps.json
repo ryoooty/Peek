@@ -1,0 +1,7 @@
+[
+  {"id": "continue", "text": "▶ Продолжить", "action": "continue_last"},
+  {"id": "characters", "text": "🎭 Персонажи", "action": "to_characters"},
+  {"id": "chats", "text": "💬 Мои чаты", "action": "to_chats"},
+  {"id": "profile", "text": "👤 Профиль", "action": "to_profile"},
+  {"id": "tokens", "text": "🪙 Токи", "action": "to_balance"}
+]

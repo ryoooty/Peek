@@ -10,6 +10,8 @@ from aiogram.types import (
 )
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
 
+from app.app_defs import APPS, COMBOS
+
 from app import storage
 from app.config import settings
 from app.utils.tz import tz_keyboard
@@ -21,14 +23,16 @@ router = Router(name="user")
 def main_menu_kb(user_id: int) -> ReplyKeyboardMarkup:
 
     kb = ReplyKeyboardBuilder()
-    # Первая кнопка: Продолжить (последний чат)
-    kb.button(text="▶ Продолжить")
-    # Остальные по две в ряд
-    kb.button(text="🎭 Персонажи")
-    kb.button(text="💬 Мои чаты")
-    kb.button(text="👤 Профиль")
-    kb.button(text="🪙 Токи")
-    kb.adjust(1, 2, 2)
+    layout = COMBOS.get("main_menu", [])
+    widths: list[int] = []
+    for row in layout:
+        widths.append(len(row))
+        for app_id in row:
+            app = APPS.get(app_id)
+            if app:
+                kb.button(text=app.get("text", app_id))
+    if widths:
+        kb.adjust(*widths)
     return kb.as_markup(resize_keyboard=True)
 
 
