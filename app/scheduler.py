@@ -92,9 +92,15 @@ def schedule_silence_check(user_id: int, chat_id: int, delay_sec: int = 600) -> 
     except Exception:
         pass
 
-    run_at = dt.datetime.utcnow() + dt.timedelta(seconds=int(delay_sec))
+    run_at = dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=int(delay_sec))
     jid = f"silence:{user_id}:{int(run_at.timestamp())}"
-    _add_job(jid, "date", run_date=run_at, func=_on_silence, args=(user_id, chat_id))
+    _add_job(
+        jid,
+        "date",
+        run_date=run_at,
+        func=_on_silence,
+        args=(user_id, chat_id),
+    )
     _user_jobs[user_id] = [jid]
 
 def rebuild_user_jobs(user_id: int) -> None:
@@ -242,7 +248,7 @@ def _on_window_end(user_id: int) -> None:
 
 
 def _now_ts() -> int:
-    return int(dt.datetime.utcnow().timestamp())
+    return int(dt.datetime.now(dt.timezone.utc).timestamp())
 
 
 def _get_user_settings(user_id: int) -> tuple[int, int, int]:
@@ -311,7 +317,13 @@ def _schedule_next(user_id: int, delay_sec: Optional[int] = None) -> None:
         delay_sec = _rand_between(int(mn), int(mx))
     when_ts = _now_ts() + int(delay_sec)
     jid = f"nudge:{user_id}:{when_ts}"
-    _add_job(jid, "date", run_date=dt.datetime.utcfromtimestamp(when_ts), func=_on_nudge_due, args=(user_id,))
+    _add_job(
+        jid,
+        "date",
+        run_date=dt.datetime.fromtimestamp(when_ts, tz=dt.timezone.utc),
+        func=_on_nudge_due,
+        args=(user_id,),
+    )
     _user_jobs[user_id] = [jid]
     try:
         storage.delete_future_plan(user_id)

@@ -36,12 +36,12 @@ def test_schedule_silence_replaces_previous(monkeypatch):
     monkeypatch.setattr(scheduler, "_scheduler", dummy)
     monkeypatch.setattr(scheduler, "_user_jobs", {})
 
-    base = dt.datetime(2020, 1, 1, 0, 0, 0)
+    base = dt.datetime(2020, 1, 1, 0, 0, 0, tzinfo=dt.timezone.utc)
     times = [base, base + dt.timedelta(seconds=1)]
 
     class DummyDatetime(dt.datetime):
         @classmethod
-        def utcnow(cls):
+        def now(cls, tz=None):
             return times.pop(0)
 
     monkeypatch.setattr(scheduler.dt, "datetime", DummyDatetime)
