@@ -500,7 +500,7 @@ def create_chat(
     ).fetchone()
     seq_no = int((r["c"] or 0) + 1)
     cur = _exec(
-        "INSERT INTO chats(user_id,char_id,mode,resp_size,seq_no) VALUES (?,?,?,?,?,?)",
+        "INSERT INTO chats(user_id,char_id,mode,resp_size,seq_no) VALUES (?,?,?,?,?)",
         (user_id, char_id, mode, resp_size, seq_no),
     )
     return int(cur.lastrowid)
