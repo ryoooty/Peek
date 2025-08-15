@@ -74,9 +74,13 @@ async def show_profile(msg: Message):
 @router.callback_query(F.data == "prof:model")
 async def cb_model(call: CallbackQuery):
     u = storage.get_user(call.from_user.id) or {}
-    models = list(settings.model_tariffs.keys())
-    cur = (u.get("default_model") or settings.default_model)
-    nxt = models[(models.index(cur) + 1) % len(models)] if models else cur
+    models = list(settings.model_tariffs)
+    cur = u.get("default_model") or settings.default_model
+    try:
+        idx = models.index(cur)
+    except ValueError:
+        idx = 0
+    nxt = models[(idx + 1) % len(models)] if models else cur
     storage.set_user_field(call.from_user.id, "default_model", nxt)
     u = storage.get_user(call.from_user.id) or {}
     await safe_edit_text(call.message, _profile_text(u), reply_markup=_profile_kb(u))
