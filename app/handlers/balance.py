@@ -7,10 +7,11 @@ from aiogram.types import Message, CallbackQuery
 
 
 from app import storage
+from app.app_defs import APPS
 
 router = Router(name="balance")
 
-BTN_BALANCE = "🪙 Токи"
+BTN_BALANCE = APPS.get("tokens", {}).get("text", "🪙 Токи")
 
 
 def _balance_text(user_id: int) -> str:
