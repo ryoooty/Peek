@@ -28,6 +28,7 @@ from app.handlers import user as user_handlers
 from app.handlers import characters as characters_handlers
 from app.handlers import profile as profile_handlers
 from app.handlers import balance as balance_handlers
+from app.handlers import payments as payments_handlers
 from app.handlers import chats as chats_handlers  # <- чат-обработчики ДОЛЖНЫ идти последними
 from app.middlewares.subscription import SubscriptionGateMiddleware
 from app.middlewares.timezone import TimezoneMiddleware
@@ -75,6 +76,7 @@ async def main():
 
     dp.include_router(profile_handlers.router)     # профиль/настройки
     dp.include_router(balance_handlers.router)     # баланс, промо, (оплата при необходимости)
+    dp.include_router(payments_handlers.router)    # оплаты и заявки
       # админ-команды
     dp.include_router(chats_handlers.router)       # чат-логика и LLM — ПОСЛЕДНИМ!
     
