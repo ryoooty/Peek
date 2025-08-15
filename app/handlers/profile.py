@@ -21,12 +21,26 @@ router = Router(name="profile")
 
 
 def _profile_text(u: dict) -> str:
-    totals = storage.user_totals(u["tg_id"])
+    uid = int(u.get("tg_id") or 0)
+    totals = (
+        storage.user_totals(uid)
+        if uid
+        else {
+            "user_msgs": 0,
+            "ai_msgs": 0,
+            "in_tokens": 0,
+            "out_tokens": 0,
+            "top_character": None,
+            "top_count": 0,
+        }
+    )
     top_line = "—"
     if totals["top_character"]:
         top_line = f"{totals['top_character']} ({totals['top_count']} сооб.)"
     sub = (u.get("subscription") or "free").lower()
-    chats_total = len(storage.list_user_chats(u["tg_id"], page=1, page_size=9999))
+    chats_total = (
+        len(storage.list_user_chats(uid, page=1, page_size=9999)) if uid else 0
+    )
 
     model = (u.get("default_model") or settings.default_model)
     live_on = bool(u.get("proactive_enabled") or 0)
