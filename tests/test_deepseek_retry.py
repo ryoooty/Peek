@@ -146,3 +146,69 @@ def test_stream_chat_retries(monkeypatch):
         {"type": "usage", "in": 1, "out": 2},
     ]
 
+
+def test_stream_chat_mid_stream_fallback(monkeypatch):
+    attempts = {"count": 0}
+
+    class DummyAiohttp:
+        ClientTimeout = lambda **kw: None
+        ClientSession = None  # will set later
+        ClientError = Exception
+
+    class DummyStreamResp:
+        def __init__(self):
+            async def gen():
+                yield b'data: {"choices":[{"delta":{"content":"hi"}}]}\n'
+                raise DummyAiohttp.ClientError("boom")
+
+            self.content = gen()
+
+    class DummyPost:
+        async def __aenter__(self):
+            return DummyStreamResp()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            pass
+
+    class DummySession:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            pass
+
+        def post(self, *args, **kwargs):
+            attempts["count"] += 1
+            return DummyPost()
+
+    DummyAiohttp.ClientSession = DummySession
+
+    async def fake_sleep(_):
+        return None
+
+    async def fake_chat(**_):
+        return provider.ChatResult(text="fb")
+
+    dummy_limits = types.SimpleNamespace(request_timeout_seconds=60, request_attempts=2)
+    dummy_settings = types.SimpleNamespace(
+        deepseek_base_url="", deepseek_api_key=None, limits=dummy_limits
+    )
+    monkeypatch.setattr(provider, "settings", dummy_settings)
+    monkeypatch.setattr(provider, "aiohttp", DummyAiohttp)
+    monkeypatch.setattr(provider.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(provider, "chat", fake_chat)
+
+    async def run_stream():
+        return [chunk async for chunk in provider.stream_chat(model="m", messages=[])]
+
+    chunks = asyncio.run(run_stream())
+    # both attempts should be tried before falling back
+    assert attempts["count"] == 2
+    assert chunks[-2:] == [
+        {"type": "delta", "text": "fb"},
+        {"type": "usage", "in": 0, "out": 0},
+    ]
+

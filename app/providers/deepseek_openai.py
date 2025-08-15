@@ -129,30 +129,33 @@ async def stream_chat(
             try:
                 async with aiohttp.ClientSession(timeout=timeout) as ses:
                     async with ses.post(url, headers=headers, json=payload) as resp:
-                        async for line in resp.content:
-                            if not line or line == b"\n":
-                                continue
-                            if not line.startswith(b"data:"):
-                                continue
-                            chunk = line[len(b"data:") :].strip()
-                            if chunk == b"[DONE]":
-                                break
-                            try:
-                                data = json.loads(chunk)
-                                if "usage" in data:
-                                    u = data["usage"]
-                                    yield {
-                                        "type": "usage",
-                                        "in": int(u.get("prompt_tokens") or 0),
-                                        "out": int(u.get("completion_tokens") or 0),
-                                    }
+                        try:
+                            async for line in resp.content:
+                                if not line or line == b"\n":
                                     continue
-                                delta = data["choices"][0]["delta"]
-                                part = delta.get("content")
-                                if part:
-                                    yield {"type": "delta", "text": part}
-                            except Exception:
-                                continue
+                                if not line.startswith(b"data:"):
+                                    continue
+                                chunk = line[len(b"data:") :].strip()
+                                if chunk == b"[DONE]":
+                                    break
+                                try:
+                                    data = json.loads(chunk)
+                                    if "usage" in data:
+                                        u = data["usage"]
+                                        yield {
+                                            "type": "usage",
+                                            "in": int(u.get("prompt_tokens") or 0),
+                                            "out": int(u.get("completion_tokens") or 0),
+                                        }
+                                        continue
+                                    delta = data["choices"][0]["delta"]
+                                    part = delta.get("content")
+                                    if part:
+                                        yield {"type": "delta", "text": part}
+                                except Exception:
+                                    continue
+                        except aiohttp.ClientError:
+                            raise
                 return
             except Exception:
                 if attempt >= attempts:
