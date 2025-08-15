@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 import time
+import re
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -662,16 +663,23 @@ def list_messages(chat_id: int, *, limit: int | None = None) -> List[Dict[str, A
 
 def search_messages(chat_id: int, query: str, limit: int = 20) -> List[Dict[str, Any]]:
     """Search messages of a chat using full-text search."""
-    rows = _q(
-        """
-        SELECT rowid AS id, content, chat_id, is_user
-          FROM messages_fts
-         WHERE messages_fts MATCH ? AND chat_id=?
-         ORDER BY bm25(messages_fts)
-         LIMIT ?
-    """,
-        (query, chat_id, limit),
-    ).fetchall()
+    # Strip characters that commonly break FTS queries
+    query = re.sub(r'["*]', '', query).strip()
+    if not query:
+        return []
+    try:
+        rows = _q(
+            """
+            SELECT rowid AS id, content, chat_id, is_user
+              FROM messages_fts
+             WHERE messages_fts MATCH ? AND chat_id=?
+             ORDER BY bm25(messages_fts)
+             LIMIT ?
+        """,
+            (query, chat_id, limit),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return []
     return [dict(r) for r in rows]
 
 

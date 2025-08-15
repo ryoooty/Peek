@@ -55,3 +55,21 @@ def test_search_messages_and_context(tmp_path: Path):
     )
     texts = [m["content"] for m in ctx]
     assert any("pizza" in t for t in texts)
+
+
+def test_search_messages_special_chars(tmp_path: Path):
+    storage.init(tmp_path / "db.sqlite")
+    storage.ensure_user(1, "user")
+    char_id = int(
+        storage._exec("INSERT INTO characters(name) VALUES (?)", ("Char",)).lastrowid
+    )
+    chat_id = int(
+        storage._exec(
+            "INSERT INTO chats(user_id,char_id,mode,resp_size,seq_no) VALUES (?,?,?,?,?)",
+            (1, char_id, "rp", "auto", 1),
+        ).lastrowid
+    )
+    storage.add_message(chat_id, is_user=True, content="I love pizza")
+
+    for q in ['"', '*']:
+        assert storage.search_messages(chat_id, q) == []
