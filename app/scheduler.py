@@ -80,9 +80,22 @@ def schedule_silence_check(user_id: int, chat_id: int, delay_sec: int = 600) -> 
     """
     if not _scheduler:
         return
+
+    # удалить предыдущие джобы тишины этого пользователя
+    try:
+        for j in list(_scheduler.get_jobs()):  # type: ignore
+            if j.id and j.id.startswith(f"silence:{user_id}:"):
+                try:
+                    _scheduler.remove_job(j.id)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
     run_at = dt.datetime.utcnow() + dt.timedelta(seconds=int(delay_sec))
     jid = f"silence:{user_id}:{int(run_at.timestamp())}"
     _add_job(jid, "date", run_date=run_at, func=_on_silence, args=(user_id, chat_id))
+    _user_jobs[user_id] = [jid]
 
 def rebuild_user_jobs(user_id: int) -> None:
     """Пересобрать или очистить суточный план Live для пользователя.
