@@ -1133,13 +1133,15 @@ def approve_topup(topup_id: int, admin_id: int) -> bool:
     ).fetchone()
     if not r or r["status"] != "pending":
         return False
+    uid = int(r["user_id"])
+    amt = float(r["amount"])
+    if amt <= 0:
+        return False
+    prov = str(r["provider"] or "")
     _exec(
         "UPDATE topups SET status='approved', approved_by=?, approved_at=CURRENT_TIMESTAMP WHERE id=?",
         (admin_id, topup_id),
     )
-    uid = int(r["user_id"])
-    amt = float(r["amount"])
-    prov = str(r["provider"] or "")
     add_paid_tokens(uid, int(amt * 1000))  # пример: 1 у.е. = 1000 токенов
     create_transaction(topup_id, uid, amt, prov)
     return True
