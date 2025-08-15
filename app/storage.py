@@ -323,6 +323,25 @@ def get_user(user_id: int) -> Dict[str, Any] | None:
 
 
 def set_user_field(user_id: int, field: str, value: Any) -> None:
+    allowed = {
+        "username",
+        "subscription",
+        "sub_end",
+        "tz_offset_min",
+        "default_chat_mode",
+        "default_resp_size",
+        "default_model",
+        "proactive_enabled",
+        "pro_per_day",
+        "pro_window_local",
+        "pro_window_utc",
+        "pro_min_gap_min",
+        "pro_min_delay_min",
+        "pro_max_delay_min",
+        "pro_free_used",
+    }
+    if field not in allowed:
+        raise ValueError("invalid field")
     _exec(f"UPDATE users SET {field}=? WHERE tg_id=?", (value, user_id))
 
 

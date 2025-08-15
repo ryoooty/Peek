@@ -34,10 +34,12 @@ def _char_card_caption(ch: dict) -> str:
 
 
 def _photo_input_for_char(ch: dict):
+    """Return an input for the character's photo.
+
+    Local files are preferred over stored Telegram file IDs to ensure that a
+    freshly uploaded photo is used when available.
     """
-    Возвращает FSInputFile, file_id(str) или None.
-    Приоритет: локальный файл (photo_path) -> file_id -> None
-    """
+
     p = (ch.get("photo_path") or "").strip()
     if p and Path(p).exists():
         return FSInputFile(p)
