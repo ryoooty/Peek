@@ -12,7 +12,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from app import storage
 from app.config import settings
-from app.domain.chats import chat_turn, live_stream, summarize_chat
+from app.domain.chats import chat_turn, chat_stream, summarize_chat
 from app.scheduler import schedule_silence_check
 from app.utils.telegram import safe_edit_text
 
@@ -274,7 +274,7 @@ async def cb_delok(call: CallbackQuery):
     await call.answer()
 
 
-# ------ Сообщения (RP/Live) ------
+# ------ Сообщения (RP/Chat) ------
 async def _typing_loop(msg: Message, stop_evt: asyncio.Event):
     try:
         while not stop_evt.is_set():
@@ -320,11 +320,11 @@ async def chatting_text(msg: Message):
         mode = (last.get("mode") or "rp").lower()
 
 
-        if mode == "live":
+        if mode == "chat":
             full = ""
             buf = ""
 
-            async for ev in live_stream(msg.from_user.id, chat_id, user_text):
+            async for ev in chat_stream(msg.from_user.id, chat_id, user_text):
                 if ev["kind"] == "chunk":
                     buf += ev["text"]
                     parts, buf = _extract_sections(buf)
@@ -349,7 +349,7 @@ async def chatting_text(msg: Message):
                     )
                     if int(ev.get("deficit") or 0) > 0:
                         await msg.answer("⚠ Баланс токенов на нуле. Пополните баланс, чтобы продолжить комфортно.")
-                                # ответ в live завершён — теперь стартуем таймер «10 минут тишины»
+                                # ответ в чате завершён — теперь стартуем таймер «10 минут тишины»
 
                     schedule_silence_check(msg.from_user.id, chat_id, delay_sec=600)
 

@@ -21,13 +21,13 @@ prev_domain = sys.modules.get("app.domain.chats")
 domain_chats = types.ModuleType("app.domain.chats")
 async def chat_turn(*args, **kwargs):
     pass
-async def live_stream(*args, **kwargs):
+async def chat_stream(*args, **kwargs):
     if False:
         yield {}
 async def summarize_chat(*args, **kwargs):
     pass
 domain_chats.chat_turn = chat_turn
-domain_chats.live_stream = live_stream
+domain_chats.chat_stream = chat_stream
 domain_chats.summarize_chat = summarize_chat
 sys.modules["app.domain.chats"] = domain_chats
 
