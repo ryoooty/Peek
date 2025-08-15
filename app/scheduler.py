@@ -63,6 +63,7 @@ def init(bot: Bot) -> None:
     # Если у юзера включён Live и нет будущих джоб — создадим суточный план.
     _add_job("proactive:tick", "interval", minutes=1, func=_tick_fill_plans)
     _add_job("bonus:daily", "cron", hour=0, minute=5, func=_daily_bonus)
+    _add_job("subs:expire", "cron", hour=0, minute=10, func=_subs_expire)
 
 
 def shutdown() -> None:
@@ -134,6 +135,17 @@ async def _daily_bonus() -> None:
     for uid in uids:
         try:
             await _bot.send_message(uid, f"💰 Ежедневный бонус: +{amount} токов")
+        except Exception:
+            pass
+
+
+async def _subs_expire() -> None:
+    uids = storage.expire_subscriptions()
+    if not _bot or not uids:
+        return
+    for uid in uids:
+        try:
+            await _bot.send_message(uid, "❗️ Срок действия подписки истёк")
         except Exception:
             pass
 
