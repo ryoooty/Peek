@@ -194,6 +194,23 @@ def _migrate() -> None:
     )"""
     )
 
+    # Full-text search mirror for messages
+    _exec(
+        """
+    CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+        content,
+        chat_id UNINDEXED,
+        is_user UNINDEXED
+    )"""
+    )
+    # Initial backfill if the FTS table is empty
+    r = _q("SELECT COUNT(*) AS c FROM messages_fts").fetchone()
+    if int(r["c"] or 0) == 0:
+        _exec(
+            "INSERT INTO messages_fts(rowid, content, chat_id, is_user) "
+            "SELECT id, content, chat_id, is_user FROM messages"
+        )
+
     # favorites (characters)
     _exec(
         """
@@ -580,8 +597,13 @@ def add_message(
         "INSERT INTO messages(chat_id,is_user,content,usage_in,usage_out, usage_cost_rub) VALUES (?,?,?,?,?,?)",
         (chat_id, 1 if is_user else 0, content, usage_in, usage_out, usage_cost_rub),
     )
+    msg_id = int(cur.lastrowid)
+    _exec(
+        "INSERT INTO messages_fts(rowid, content, chat_id, is_user) VALUES (?,?,?,?)",
+        (msg_id, content, chat_id, 1 if is_user else 0),
+    )
     _exec("UPDATE chats SET updated_at=CURRENT_TIMESTAMP WHERE id=?", (chat_id,))
-    return int(cur.lastrowid)
+    return msg_id
 
 
 def compress_history(
@@ -593,6 +615,7 @@ def compress_history(
 ) -> None:
     """Удаляет сообщения чата и сохраняет краткое содержание."""
     _exec("DELETE FROM messages WHERE chat_id=?", (chat_id,))
+    _exec("DELETE FROM messages_fts WHERE chat_id=?", (chat_id,))
     add_message(
         chat_id,
         is_user=False,
@@ -613,6 +636,21 @@ def list_messages(chat_id: int, *, limit: int | None = None) -> List[Dict[str, A
         rows = _q(
             "SELECT * FROM messages WHERE chat_id=? ORDER BY id", (chat_id,)
         ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def search_messages(chat_id: int, query: str, limit: int = 20) -> List[Dict[str, Any]]:
+    """Search messages of a chat using full-text search."""
+    rows = _q(
+        """
+        SELECT rowid AS id, content, chat_id, is_user
+          FROM messages_fts
+         WHERE messages_fts MATCH ? AND chat_id=?
+         ORDER BY bm25(messages_fts)
+         LIMIT ?
+    """,
+        (query, chat_id, limit),
+    ).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -646,6 +684,7 @@ def delete_chat(chat_id: int, user_id: int) -> bool:
     if not ch or int(ch["user_id"]) != user_id:
         return False
     _exec("DELETE FROM messages WHERE chat_id=?", (chat_id,))
+    _exec("DELETE FROM messages_fts WHERE chat_id=?", (chat_id,))
     _exec("DELETE FROM chats WHERE id=?", (chat_id,))
     return True
 

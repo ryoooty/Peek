@@ -39,8 +39,10 @@ async def _collect_context(
     user_id: int,
     model: str,
     limit: int = 50,
+    query: str | None = None,
 ) -> List[dict]:
     msgs = storage.list_messages(chat_id, limit=limit)
+    seen_ids = {m["id"] for m in msgs}
     res: List[dict] = []
     for m in msgs:
         role = "user" if m["is_user"] else "assistant"
@@ -67,6 +69,12 @@ async def _collect_context(
             dict(role="system", content=system_prompt),
             dict(role="system", content=summary.text),
         ] + tail
+    if query:
+        for m in storage.search_messages(chat_id, query, limit=5):
+            if m["id"] in seen_ids:
+                continue
+            role = "user" if m["is_user"] else "assistant"
+            res.append(dict(role=role, content=m["content"]))
     return res
 
 
@@ -171,7 +179,9 @@ async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
     await _maybe_compress_history(user_id, chat_id, model)
 
     cache_before = storage.get_cache_tokens(user_id)
-    messages = await _collect_context(chat_id, user_id=user_id, model=model)
+    messages = await _collect_context(
+        chat_id, user_id=user_id, model=model, query=text
+    )
     messages += [dict(role="user", content=text)]
 
 
@@ -224,7 +234,9 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[D
     await _maybe_compress_history(user_id, chat_id, model)
 
     cache_before = storage.get_cache_tokens(user_id)
-    messages = await _collect_context(chat_id, user_id=user_id, model=model)
+    messages = await _collect_context(
+        chat_id, user_id=user_id, model=model, query=text
+    )
     messages += [dict(role="user", content=text)]
 
 
