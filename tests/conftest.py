@@ -76,6 +76,7 @@ types_mod.CallbackQuery = _Dummy
 types_mod.TelegramObject = _Dummy
 types_mod.InlineKeyboardMarkup = _Dummy
 types_mod.InlineKeyboardButton = _Dummy
+types_mod.InputMediaPhoto = _Dummy
 types_mod.__path__ = []
 
 keyboard_mod = types.ModuleType("aiogram.utils.keyboard")
@@ -89,6 +90,36 @@ sys.modules.setdefault("aiogram.filters", filters)
 sys.modules.setdefault("aiogram.types", types_mod)
 sys.modules.setdefault("aiogram.utils", utils_mod)
 sys.modules.setdefault("aiogram.utils.keyboard", keyboard_mod)
+apscheduler = types.ModuleType("apscheduler")
+schedulers_mod = types.ModuleType("apscheduler.schedulers")
+asyncio_sched_mod = types.ModuleType("apscheduler.schedulers.asyncio")
+
+class _DummyScheduler:
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def add_job(self, *args, **kwargs):
+        pass
+
+    def remove_job(self, *args, **kwargs):
+        pass
+
+    def get_jobs(self, *args, **kwargs):
+        return []
+
+    def start(self, *args, **kwargs):
+        pass
+
+    def shutdown(self, *args, **kwargs):
+        pass
+
+asyncio_sched_mod.AsyncIOScheduler = _DummyScheduler
+schedulers_mod.asyncio = asyncio_sched_mod
+apscheduler.schedulers = schedulers_mod
+
+sys.modules.setdefault("apscheduler", apscheduler)
+sys.modules.setdefault("apscheduler.schedulers", schedulers_mod)
+sys.modules.setdefault("apscheduler.schedulers.asyncio", asyncio_sched_mod)
 exceptions_mod = types.ModuleType("aiogram.exceptions")
 exceptions_mod.TelegramBadRequest = _Dummy
 enums_mod = types.ModuleType("aiogram.enums")
