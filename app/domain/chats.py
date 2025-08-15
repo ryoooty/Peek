@@ -4,9 +4,6 @@ from dataclasses import dataclass
 import math
 from typing import AsyncGenerator, Dict, List, Tuple
 
-
-import math
-
 from app import storage
 from app.config import settings
 from app.character import get_system_prompt_for_chat
