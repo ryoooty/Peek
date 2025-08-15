@@ -612,17 +612,37 @@ def add_message(
     usage_in: int | None = None,
     usage_out: int | None = None,
     usage_cost_rub: float | None = None,
+    commit: bool = True,
 ) -> int:
-    cur = _exec(
-        "INSERT INTO messages(chat_id,is_user,content,usage_in,usage_out, usage_cost_rub) VALUES (?,?,?,?,?,?)",
-        (chat_id, 1 if is_user else 0, content, usage_in, usage_out, usage_cost_rub),
-    )
-    msg_id = int(cur.lastrowid)
-    _exec(
-        "INSERT INTO messages_fts(rowid, content, chat_id, is_user) VALUES (?,?,?,?)",
-        (msg_id, content, chat_id, 1 if is_user else 0),
-    )
-    _exec("UPDATE chats SET updated_at=CURRENT_TIMESTAMP WHERE id=?", (chat_id,))
+    """Insert a message and update related tables.
+
+    All DB statements are executed within a transaction. By default the
+    transaction is committed, but callers may disable auto-commit and manage
+    the transaction themselves by passing ``commit=False``.
+    """
+
+    assert _conn is not None
+    try:
+        cur = _conn.execute(
+            "INSERT INTO messages(chat_id,is_user,content,usage_in,usage_out, usage_cost_rub) VALUES (?,?,?,?,?,?)",
+            (chat_id, 1 if is_user else 0, content, usage_in, usage_out, usage_cost_rub),
+        )
+        msg_id = int(cur.lastrowid)
+        _conn.execute(
+            "INSERT INTO messages_fts(rowid, content, chat_id, is_user) VALUES (?,?,?,?)",
+            (msg_id, content, chat_id, 1 if is_user else 0),
+        )
+        _conn.execute(
+            "UPDATE chats SET updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            (chat_id,),
+        )
+    except Exception:
+        if commit:
+            _conn.rollback()
+        raise
+    else:
+        if commit:
+            _conn.commit()
     return msg_id
 
 
@@ -634,15 +654,18 @@ def compress_history(
     usage_out: int | None = None,
 ) -> None:
     """Удаляет сообщения чата и сохраняет краткое содержание."""
-    _exec("DELETE FROM messages WHERE chat_id=?", (chat_id,))
-    _exec("DELETE FROM messages_fts WHERE chat_id=?", (chat_id,))
-    add_message(
-        chat_id,
-        is_user=False,
-        content=summary,
-        usage_in=usage_in,
-        usage_out=usage_out,
-    )
+    assert _conn is not None
+    with _conn:
+        _conn.execute("DELETE FROM messages WHERE chat_id=?", (chat_id,))
+        _conn.execute("DELETE FROM messages_fts WHERE chat_id=?", (chat_id,))
+        add_message(
+            chat_id,
+            is_user=False,
+            content=summary,
+            usage_in=usage_in,
+            usage_out=usage_out,
+            commit=False,
+        )
 
 
 def list_messages(chat_id: int, *, limit: int | None = None) -> List[Dict[str, Any]]:
