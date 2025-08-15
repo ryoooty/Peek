@@ -12,7 +12,6 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand
 from app.mw.maintenance import MaintenanceMiddleware
 from app.mw.ban import BanMiddleware
-from app.mw.rate_limit import RateLimitLLM
 from app.mw.chat_delay import ChatDelayMiddleware
 from app.config import settings, register_reload_hook
 from app import storage
@@ -68,7 +67,6 @@ async def main():
     dp.update.outer_middleware(SubscriptionGateMiddleware())
     dp.update.outer_middleware(TimezoneMiddleware())
     dp.update.outer_middleware(BanMiddleware())
-    dp.update.outer_middleware(RateLimitLLM())
     dp.update.outer_middleware(ChatDelayMiddleware())
 
     # Подключаем роутеры. ВАЖНО: «chats» — ПОСЛЕДНИЙ, чтобы не перехватывать slash-команды.
