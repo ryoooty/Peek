@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from contextlib import suppress
+
 from typing import Any, Dict, Callable, Awaitable
 
 from aiogram import BaseMiddleware
@@ -45,15 +47,20 @@ class RateLimitLLM(BaseMiddleware):
 
     async def shutdown(self) -> None:
         """Cancel worker task and clear all queues."""
-        if self._worker_task:
+        if self._worker_task is not None:
             self._worker_task.cancel()
-            try:
+            with suppress(asyncio.CancelledError):
                 await self._worker_task
-            except asyncio.CancelledError:
-                pass
             self._worker_task = None
+        for q in self._queues.values():
+            while not q.empty():
+                with suppress(asyncio.QueueEmpty):
+                    q.get_nowait()
         self._queues.clear()
-        self._pending = asyncio.Queue()
+        while not self._pending.empty():
+            with suppress(asyncio.QueueEmpty):
+                self._pending.get_nowait()
+
 
     async def _worker(self) -> None:
         while True:
@@ -65,7 +72,7 @@ class RateLimitLLM(BaseMiddleware):
             try:
                 await handler(event, data)
             except Exception:
-                logging.exception("RateLimit handler failed")
+                logging.exception("RateLimitLLM handler error")
 
             if not queue.empty():
                 await self._pending.put(uid)

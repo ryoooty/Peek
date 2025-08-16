@@ -63,13 +63,14 @@ async def main():
     bot = Bot(token=settings.bot_token, default=DefaultBotProperties(parse_mode="HTML"))
     dp = Dispatcher(storage=MemoryStorage())
 
+    rate_limit_mw = RateLimitLLM()
     # Middlewares (внешние)
     dp.update.outer_middleware(MaintenanceMiddleware())
     dp.update.outer_middleware(SubscriptionGateMiddleware())
     dp.update.outer_middleware(TimezoneMiddleware())
     dp.update.outer_middleware(BanMiddleware())
     dp.update.outer_middleware(ChatDelayMiddleware())
-    rate_limit_mw = RateLimitLLM()
+
     dp.update.outer_middleware(rate_limit_mw)
 
     # Подключаем роутеры. ВАЖНО: «chats» — ПОСЛЕДНИЙ, чтобы не перехватывать slash-команды.
@@ -104,6 +105,7 @@ async def main():
         await dp.start_polling(bot)
     finally:
         logging.info("Bot stopped")
+        await rate_limit_mw.shutdown()
         scheduler.shutdown()
         await rate_limit_mw.shutdown()
 
