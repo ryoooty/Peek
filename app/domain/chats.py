@@ -64,7 +64,7 @@ async def _collect_context(
             usage_out=summary.usage_out,
         )
         _apply_billing(user_id, chat_id, model, summary.usage_in, summary.usage_out)
-        storage.add_cache_tokens(chat_id, summary.usage_in + summary.usage_out)
+        storage.add_cache_tokens(chat_id, summary.usage_out - summary.usage_in)
         tail = res[1:][-20:]
         res = [
             dict(role="system", content=system_prompt),
@@ -172,7 +172,7 @@ async def _maybe_compress_history(user_id: int, chat_id: int, model: str) -> Non
         usage_out=summary.usage_out,
     )
     _apply_billing(user_id, chat_id, model, summary.usage_in, summary.usage_out)
-    storage.add_cache_tokens(chat_id, summary.usage_in + summary.usage_out)
+    storage.add_cache_tokens(chat_id, summary.usage_out - summary.usage_in)
 
 
 async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:

@@ -956,6 +956,16 @@ def get_cache_tokens(chat_id: int) -> int:
     return int(ch.get("cache_tokens") or 0)
 
 
+def add_chat_cache_tokens(chat_id: int, amount: int) -> None:
+    """Backward-compatible wrapper for :func:`add_cache_tokens`."""
+    add_cache_tokens(chat_id, amount)
+
+
+def get_chat_cache_tokens(chat_id: int) -> int:
+    """Backward-compatible wrapper for :func:`get_cache_tokens`."""
+    return get_cache_tokens(chat_id)
+
+
 
 def spend_tokens(user_id: int, amount: int) -> Tuple[int, int, int]:
     """
