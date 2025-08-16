@@ -46,3 +46,37 @@ def test_chat_delay_throttles(monkeypatch):
 
     assert calls == ["hi", "hi"]
     assert msgs[0].replies  # received warning
+
+
+def test_chat_delay_cleanup(monkeypatch):
+    monkeypatch.setattr(storage, "get_last_chat", lambda uid: {"id": uid})
+    monkeypatch.setattr(storage, "get_chat", lambda cid: {"min_delay_ms": 1000})
+
+    t = {"val": 0.0}
+    monkeypatch.setattr(time, "monotonic", lambda: t["val"])
+
+    async def handler(event, data):
+        pass
+
+    class Message:
+        def __init__(self, uid: int):
+            self.text = "hi"
+            self.from_user = SimpleNamespace(id=uid)
+
+        async def answer(self, text):
+            pass
+
+    mw = ChatDelayMiddleware()
+
+    async def run():
+        # create messages for chats 1..3
+        for uid in range(1, 4):
+            await mw(handler, Message(uid), {})
+            t["val"] += 0.1
+        # advance time beyond delay * 2 and send another message
+        t["val"] = 3.0
+        await mw(handler, Message(4), {})
+
+    asyncio.run(run())
+
+    assert list(mw._last.keys()) == [4]
