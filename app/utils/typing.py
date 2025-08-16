@@ -1,7 +1,10 @@
 from __future__ import annotations
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 from aiogram import Bot
+
+logger = logging.getLogger(__name__)
 
 class TypingPacer:
     """
@@ -30,7 +33,7 @@ class TypingPacer:
             pass
         except Exception:
             # не падаем из-за сетевых мелочей
-            pass
+            logger.exception("Typing pump failed for chat %s", self.chat_id)
 
     def start(self):
         if not self._task:
@@ -44,7 +47,7 @@ class TypingPacer:
             try:
                 await self._task
             except Exception:
-                pass
+                logger.exception("Typing pacer stop failed for chat %s", self.chat_id)
             self._task = None
 
 @asynccontextmanager

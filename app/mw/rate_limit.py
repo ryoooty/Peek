@@ -3,10 +3,13 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import suppress
+
 from typing import Any, Dict, Callable, Awaitable
 
 from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject
+
+logger = logging.getLogger(__name__)
 
 
 class RateLimitLLM(BaseMiddleware):
@@ -58,6 +61,7 @@ class RateLimitLLM(BaseMiddleware):
             with suppress(asyncio.QueueEmpty):
                 self._pending.get_nowait()
 
+
     async def _worker(self) -> None:
         while True:
             uid = await self._pending.get()
@@ -69,6 +73,7 @@ class RateLimitLLM(BaseMiddleware):
                 await handler(event, data)
             except Exception:
                 logging.exception("RateLimitLLM handler error")
+
             if not queue.empty():
                 await self._pending.put(uid)
             if self.rate:

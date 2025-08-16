@@ -70,6 +70,7 @@ async def main():
     dp.update.outer_middleware(TimezoneMiddleware())
     dp.update.outer_middleware(BanMiddleware())
     dp.update.outer_middleware(ChatDelayMiddleware())
+
     dp.update.outer_middleware(rate_limit_mw)
 
     # Подключаем роутеры. ВАЖНО: «chats» — ПОСЛЕДНИЙ, чтобы не перехватывать slash-команды.
@@ -98,7 +99,7 @@ async def main():
         Path("run").mkdir(exist_ok=True)
         (Path("run") / "main.pid").write_text(str(os.getpid()))
     except Exception:
-        pass
+        logging.exception("Failed to prepare run directory")
 
     try:
         await dp.start_polling(bot)
@@ -106,6 +107,7 @@ async def main():
         logging.info("Bot stopped")
         await rate_limit_mw.shutdown()
         scheduler.shutdown()
+        await rate_limit_mw.shutdown()
 
 
 if __name__ == "__main__":
