@@ -1,15 +1,18 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-import math
 import logging
-from typing import AsyncGenerator, Dict, List, Tuple
+import math
+from dataclasses import dataclass
+from typing import AsyncGenerator
 
 from app import storage
-from app.config import settings
-from app.character import get_system_prompt_for_chat
-from app.providers.deepseek_openai import chat as provider_chat, stream_chat as provider_stream
 from app.billing.pricing import calc_usage_cost_rub
+from app.character import get_system_prompt_for_chat
+from app.config import settings
+from app.providers.deepseek_openai import (
+    chat as provider_chat,
+    stream_chat as provider_stream,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -38,10 +41,10 @@ async def _collect_context(
     model: str,
     limit: int = 50,
     query: str | None = None,
-) -> List[dict]:
+) -> list[dict]:
     msgs = storage.list_messages(chat_id, limit=limit)
     seen_ids = {m["id"] for m in msgs}
-    res: List[dict] = []
+    res: list[dict] = []
     for m in msgs:
         role = "user" if m["is_user"] else "assistant"
         res.append(dict(role=role, content=m["content"]))
@@ -75,7 +78,7 @@ async def _collect_context(
     return res
 
 
-def _size_caps(resp_size: str) -> Tuple[int, int]:
+def _size_caps(resp_size: str) -> tuple[int, int]:
     if resp_size == "small":
         return (220, 300)
     if resp_size == "medium":
@@ -117,7 +120,7 @@ def _apply_billing(
     usage_in: int,
     usage_out: int,
     cache_tokens: int | None = None,
-) -> Tuple[int, int]:
+) -> tuple[int, int]:
     """Возвращает (billed, deficit)."""
     if cache_tokens is None:
         cache_tokens = storage.get_cache_tokens(chat_id)
@@ -130,7 +133,7 @@ def _apply_billing(
 
 async def summarize_chat(chat_id: int, *, model: str, sentences: int = 4) -> ChatReply:
     msgs = storage.list_messages(chat_id, limit=40)
-    parts: List[str] = []
+    parts: list[str] = []
     for m in msgs[-20:]:
         who = "User" if m["is_user"] else "Assistant"
         parts.append(f"{who}: {m['content']}")
@@ -185,10 +188,6 @@ async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
         chat_id, user_id=user_id, model=model, query=text
     )
     messages += [dict(role="user", content=text)]
-
-
-
-
     r = await provider_chat(
         model=model,
         messages=messages,
@@ -207,9 +206,7 @@ async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
     cost_in, cost_out, cost_cache, cost_total = calc_usage_cost_rub(
         model, usage_in, usage_out, cache_before
     )
-
     return ChatReply(
-
         text=out_text,
         usage_in=usage_in,
         usage_out=usage_out,
@@ -222,7 +219,7 @@ async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
     )
 
 
-async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[Dict[str, str], None]:
+async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[dict[str, str], None]:
     """
     Live-режим: отдаём сырые дельты текста + финальные usage.
     Хендлер агрегирует в буфер и нарезает на сообщения.
@@ -240,11 +237,6 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[D
         chat_id, user_id=user_id, model=model, query=text
     )
     messages += [dict(role="user", content=text)]
-
-
-
-
-
     try:
         async for ev in provider_stream(
             model=model,
