@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 from typing import TYPE_CHECKING
 
@@ -16,6 +17,8 @@ from app.config import settings
 from app.domain.chats import chat_turn, chat_stream, summarize_chat
 from app.scheduler import schedule_silence_check
 from app.utils.telegram import safe_edit_text
+
+logger = logging.getLogger(__name__)
 
 router = Router(name="chats")
 
@@ -192,7 +195,7 @@ async def cb_export(call: CallbackQuery):
         bio.name = f"chat_{chat_id}.txt"
         await call.message.answer_document(bio)
     except Exception:
-        pass
+        logger.exception("Failed to export chat %s", chat_id)
 
 
 @router.callback_query(F.data.startswith("chat:import:"))
@@ -297,7 +300,7 @@ async def _typing_loop(msg: Message, stop_evt: asyncio.Event):
             await msg.bot.send_chat_action(msg.chat.id, ChatAction.TYPING)
             await asyncio.sleep(4)
     except Exception:
-        pass
+        logger.exception("Typing loop failed for chat %s", msg.chat.id)
 
 
 def _extract_sections(buf: str) -> tuple[list[str], str]:
@@ -401,5 +404,5 @@ async def chatting_text(msg: Message):
         try:
             await asyncio.wait_for(typer, timeout=0.1)
         except Exception:
-            pass
+            logger.exception("Typing loop cleanup failed for chat %s", msg.chat.id)
         _storage().set_user_chatting(msg.from_user.id, False)  # <-- диалог завершился

@@ -98,7 +98,7 @@ async def main():
         Path("run").mkdir(exist_ok=True)
         (Path("run") / "main.pid").write_text(str(os.getpid()))
     except Exception:
-        pass
+        logging.exception("Failed to prepare run directory")
 
     try:
         await dp.start_polling(bot)
