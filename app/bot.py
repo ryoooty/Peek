@@ -37,10 +37,22 @@ from app.handlers import payments as payments_handlers
 from app.handlers import chats as chats_handlers  # <- чат-обработчики ДОЛЖНЫ идти последними
 from app.middlewares.subscription import SubscriptionGateMiddleware
 from app.middlewares.timezone import TimezoneMiddleware
+from aiohttp import web
 
 runtime.setup_logging()
 
-
+async def _run_http_server() -> None:
+    app = web.Application()
+    app.add_routes(payments_handlers.http_router)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, port=8080)
+    await site.start()
+    logger.info("HTTP server started on http://localhost:8080")
+    try:
+        await asyncio.Event().wait()
+    finally:
+        await runner.cleanup()
 
 async def _set_bot_commands(bot: Bot) -> None:
     cmds = [
@@ -115,7 +127,10 @@ async def main():
         logger.exception("failed to write pid file")
 
     try:
-        await dp.start_polling(bot)
+        await asyncio.gather(
+            dp.start_polling(bot),
+            _run_http_server(),
+        )
     finally:
         logging.info("Bot stopped")
         await rate_limit_mw.shutdown()
