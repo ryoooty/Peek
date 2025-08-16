@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any, Dict, Callable, Awaitable
 
@@ -7,6 +8,8 @@ from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject
 
 from app import storage
+
+logger = logging.getLogger(__name__)
 
 
 class ChatDelayMiddleware(BaseMiddleware):
@@ -45,14 +48,20 @@ class ChatDelayMiddleware(BaseMiddleware):
                 try:
                     await answer("Подождите немного перед следующим сообщением.")
                 except Exception:
-                    pass
+                    logger.exception(
+                        "Failed to warn user %s about chat delay", from_user.id
+                    )
             else:
                 bot = data.get("bot")
                 if bot and from_user:
                     try:
-                        await bot.send_message(from_user.id, "Подождите немного перед следующим сообщением.")
+                        await bot.send_message(
+                            from_user.id, "Подождите немного перед следующим сообщением."
+                        )
                     except Exception:
-                        pass
+                        logger.exception(
+                            "Failed to send delay message to user %s", from_user.id
+                        )
             return
         self._last[chat_id] = now
         return await handler(event, data)

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any, Dict, Callable, Awaitable
 
 from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject
+
+logger = logging.getLogger(__name__)
 
 
 class RateLimitLLM(BaseMiddleware):
@@ -50,7 +53,7 @@ class RateLimitLLM(BaseMiddleware):
             try:
                 await handler(event, data)
             except Exception:
-                pass
+                logger.exception("Handler failed for user %s in rate limit worker", uid)
             if not queue.empty():
                 await self._pending.put(uid)
             if self.rate:

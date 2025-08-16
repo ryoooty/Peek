@@ -1,12 +1,15 @@
 # app/mw/maintenance.py
 from __future__ import annotations
 
+import logging
 from typing import Any, Callable, Awaitable, Optional, Iterable
 
 from aiogram import BaseMiddleware
 from aiogram.types import Message, CallbackQuery, Update
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 def _is_admin(user_id: Optional[int]) -> bool:
@@ -50,7 +53,7 @@ class MaintenanceMiddleware(BaseMiddleware):
             try:
                 await event.answer("🛠 Сейчас идут техработы. Попробуйте позже.")
             except Exception:
-                pass
+                logger.exception("Failed to send maintenance notice to user %s", uid)
             return
 
         # CallbackQuery: пропускаем админов, остальных гасим
@@ -61,7 +64,7 @@ class MaintenanceMiddleware(BaseMiddleware):
             try:
                 await event.answer("🛠 Техработы. Попробуйте позже.", show_alert=True)
             except Exception:
-                pass
+                logger.exception("Failed to alert user %s about maintenance", uid)
             return
 
         # Любые другие типы апдейтов — пропустим только админов
