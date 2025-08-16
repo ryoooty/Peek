@@ -44,16 +44,19 @@ def close() -> None:
 
 
 def _exec(sql: str, params: Tuple | Dict | None = None) -> sqlite3.Cursor:
-    assert _conn is not None
+
     with _conn_lock:
+        assert _conn is not None
+
         cur = _conn.execute(sql, params or ())
         _conn.commit()
         return cur
 
 
 def _q(sql: str, params: Tuple | Dict | None = None) -> sqlite3.Cursor:
-    assert _conn is not None
     with _conn_lock:
+        assert _conn is not None
+
         return _conn.execute(sql, params or ())
 
 
@@ -83,8 +86,9 @@ def _cache_set(key: str, value: Any) -> None:
 
 # ------------- Schema -------------
 def _has_col(table: str, col: str) -> bool:
-    assert _conn is not None
     with _conn_lock:
+        assert _conn is not None
+
         cur = _conn.execute(f"PRAGMA table_info({table})")
         return any(r[1] == col for r in cur.fetchall())
 
@@ -649,6 +653,7 @@ def add_message(
     usage_cost_rub: float | None = None,
     commit: bool = True,
 ) -> int:
+
     """Insert a message and update related tables.
 
     All DB statements are executed within a transaction. By default the
@@ -683,6 +688,7 @@ def add_message(
 
 
 def compress_history(
+
     chat_id: int,
     summary: str,
     *,
@@ -690,6 +696,7 @@ def compress_history(
     usage_out: int | None = None,
 ) -> None:
     """Удаляет сообщения чата и сохраняет краткое содержание."""
+
     assert _conn is not None
     with _conn_lock:
         with _conn:
