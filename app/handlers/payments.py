@@ -36,6 +36,7 @@ async def boosty_webhook(req: web.Request) -> web.Response:
         user_id = int(payload.get("user_id"))
         amount = float(payload.get("amount"))
     except Exception:
+        logger.warning("bad boosty webhook payload", exc_info=True)
         return web.Response(status=400)
     storage.create_topup_pending(user_id, amount, provider="boosty")
     return web.Response(text="ok")
@@ -53,6 +54,7 @@ async def donationalerts_webhook(req: web.Request) -> web.Response:
         user_id = int(payload.get("user_id"))
         amount = float(payload.get("amount"))
     except Exception:
+        logger.warning("bad donationalerts webhook payload", exc_info=True)
         return web.Response(status=400)
     storage.create_topup_pending(user_id, amount, provider="donationalerts")
     return web.Response(text="ok")
