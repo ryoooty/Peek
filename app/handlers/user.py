@@ -85,11 +85,12 @@ async def start_plain(msg: Message):
 @router.callback_query(F.data.startswith("tz:"))
 async def cb_set_tz(call: CallbackQuery):
     try:
-        offset = int(call.data.split(":", 1)[1])
+        # offset is provided in minutes
+        offset_min = int(call.data.split(":", 1)[1])
     except Exception:
         await call.answer("Некорректное значение", show_alert=True)
         return
-    storage.set_user_field(call.from_user.id, "tz_offset_min", offset)
+    storage.set_user_field(call.from_user.id, "tz_offset_min", offset_min)
     await safe_edit_text(call.message, "Часовой пояс сохранён.")
     await call.message.answer("Здравствуйте!", reply_markup=main_menu_kb(call.from_user.id))
     await call.answer()
