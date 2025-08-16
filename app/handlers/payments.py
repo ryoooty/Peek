@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
 from aiohttp import web
 from aiogram import Router, F
 from aiogram.filters import Command
@@ -11,6 +12,8 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from app import storage
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 router = Router(name="payments")
 http_router = web.RouteTableDef()
@@ -90,7 +93,7 @@ async def cmd_confirm(msg: Message):
         try:
             await msg.bot.send_message(admin_id, note)
         except Exception:
-            pass
+            logger.exception("Failed to notify admin %s about topup %s", admin_id, tid)
     await msg.answer("Заявка отправлена на модерацию. Спасибо!")
 
 

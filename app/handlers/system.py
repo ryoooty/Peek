@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
@@ -8,6 +9,8 @@ from app import runtime, storage
 from app.config import reload_settings, settings
 
 from app.scheduler import rebuild_user_jobs
+
+logger = logging.getLogger(__name__)
 
 router = Router(name="system")
 
@@ -24,7 +27,7 @@ async def cmd_reload(msg: Message):
         for r in rows:
             rebuild_user_jobs(int(r["tg_id"]))
     except Exception:
-        pass
+        logger.exception("Failed to rebuild user jobs on reload")
     await msg.answer("Конфигурация перезагружена ✅")
 
 
@@ -54,7 +57,7 @@ async def cmd_diag(msg: Message):
         try:
             job_ids = [j.id or "" for j in scheduler.get_jobs()]
         except Exception:
-            pass
+            logger.exception("Failed to collect scheduler jobs")
     gate_state = "ON" if settings.sub_channel_id else "OFF"
     err_counts = runtime.get_error_counts()
     err_text = ", ".join(f"{k}={v}" for k, v in err_counts.items()) or "—"
