@@ -4,6 +4,8 @@ import asyncio
 from pathlib import Path
 import pytest
 
+config_module: types.ModuleType | None = None
+
 # Stub configuration before importing modules that depend on it
 class Tariff:
     def __init__(self, input_per_1k: float, output_per_1k: float, cache_per_1k: float):
@@ -40,6 +42,7 @@ if str(ROOT) not in sys.path:
 
 
 def _setup(monkeypatch):
+    global config_module
     config_module = types.ModuleType("config")
     config_module.settings = DummySettings()
     config_module.BASE_DIR = ROOT
@@ -174,6 +177,7 @@ def teardown_module():
 
 
 def test_collect_context_compression_updates_cache(tmp_path, monkeypatch):
+    storage, chats = _setup(monkeypatch)
     storage.init(tmp_path / "ctx.db")
     storage.ensure_user(4, "u")
     char_id = storage.ensure_character("c")
@@ -195,6 +199,7 @@ def test_collect_context_compression_updates_cache(tmp_path, monkeypatch):
 
 
 def test_maybe_compress_history_updates_cache(tmp_path, monkeypatch):
+    storage, chats = _setup(monkeypatch)
     storage.init(tmp_path / "hist.db")
     storage.ensure_user(5, "u")
     char_id = storage.ensure_character("c")
