@@ -19,7 +19,10 @@ def create_app() -> web.Application:
 
 def main() -> None:
     """Run the aiohttp web server."""
-    web.run_app(create_app())
+    try:
+        web.run_app(create_app())
+    finally:
+        storage.close()
 
 
 if __name__ == "__main__":

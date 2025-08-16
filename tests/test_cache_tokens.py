@@ -167,6 +167,9 @@ def test_cache_tokens_affect_billing(tmp_path, monkeypatch):
 
 
 def teardown_module():
+    mod = sys.modules.get("app.storage")
+    if mod and hasattr(mod, "close"):
+        mod.close()
     sys.modules.pop("app.storage", None)
     sys.modules.pop("app.domain.chats", None)
     sys.modules.pop("app.handlers.profile", None)

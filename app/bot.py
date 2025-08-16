@@ -102,6 +102,7 @@ async def main():
     finally:
         logging.info("Bot stopped")
         scheduler.shutdown()
+        storage.close()
 
 
 if __name__ == "__main__":

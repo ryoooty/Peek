@@ -26,6 +26,7 @@ def storage():
     storage_module = importlib.import_module("app.storage")
     importlib.reload(storage_module)
     yield storage_module
+    storage_module.close()
     sys.modules.pop("app.storage", None)
     sys.modules.pop("app.config", None)
 

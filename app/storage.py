@@ -35,6 +35,14 @@ def init(path: str | Path) -> None:
     _migrate()
 
 
+def close() -> None:
+    global _conn
+    with _conn_lock:
+        if _conn is not None:
+            _conn.close()
+            _conn = None
+
+
 def _exec(sql: str, params: Tuple | Dict | None = None) -> sqlite3.Cursor:
     assert _conn is not None
     cur = _conn.execute(sql, params or ())
