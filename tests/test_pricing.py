@@ -30,9 +30,11 @@ class DummySettings:
 
 config_module = types.ModuleType("config")
 config_module.settings = DummySettings()
-sys.modules.setdefault("app.config", config_module)
+sys.modules["app.config"] = config_module
 
-from app.billing.pricing import calc_usage_cost_rub
+import importlib
+sys.modules.pop("app.billing.pricing", None)
+
 
 
 @pytest.mark.parametrize(
@@ -45,5 +47,8 @@ from app.billing.pricing import calc_usage_cost_rub
     ],
 )
 def test_calc_usage_cost_rub(model, prompt, completion, cache, expected):
+    sys.modules["app.config"] = config_module
+    sys.modules.pop("app.billing.pricing", None)
+    calc_usage_cost_rub = importlib.import_module("app.billing.pricing").calc_usage_cost_rub
     cost = calc_usage_cost_rub(model, prompt, completion, cache)
     assert cost == pytest.approx(expected)

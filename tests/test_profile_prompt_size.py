@@ -33,6 +33,8 @@ def test_cb_set_prompts_handles_unknown_size(tmp_path, monkeypatch):
     scheduler_module.rebuild_user_jobs = lambda *args, **kwargs: None
     monkeypatch.setitem(sys.modules, "app.scheduler", scheduler_module)
 
+    monkeypatch.delitem(sys.modules, "app.storage", raising=False)
+    monkeypatch.delitem(sys.modules, "app.handlers.profile", raising=False)
     from app import storage
     from app.handlers import profile
 
