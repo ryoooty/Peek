@@ -1,6 +1,8 @@
 # Peek
 бот аналог C.ai но в телеграмме, с большим списком функций и лучшими нейронками под капотом
 
+Требуется Python 3.10 или новее.
+
 ## Webhook endpoints
 
 The HTTP server exposes the following webhook URLs for payment providers:
