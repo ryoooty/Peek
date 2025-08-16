@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import sys
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -59,6 +60,16 @@ async def _set_bot_commands(bot: Bot) -> None:
 
 async def main():
     logging.info(">> Bot is starting…")
+
+    if not settings.deepseek_api_key:
+        logger.error("DEEPSEEK_API_KEY is not set")
+        sys.exit(1)
+
+    try:
+        import aiohttp  # noqa: F401
+    except Exception:
+        logger.error("aiohttp is not installed")
+        sys.exit(1)
 
     # БД и бота
     storage.init(settings.db_path)
