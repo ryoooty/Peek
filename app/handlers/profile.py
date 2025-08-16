@@ -75,12 +75,14 @@ def _profile_kb(u: dict):
     kb.button(text=f"🤖 Модель: {u.get('default_model') or s.default_model}", callback_data="prof:model")
     # 2 — токи
     kb.button(text="🪙 Токи", callback_data="prof:balance")
-    # 3 — режим общения
+    # 3 — подписка
+    kb.button(text="📣 Подписка", callback_data="prof:sub")
+    # 4 — режим общения
     kb.button(text=f"💬 Режим: {u.get('default_chat_mode') or 'rp'}", callback_data="prof:mode")
-    # 4 — настройки/инфо
+    # 5 — настройки/инфо
     kb.button(text="⚙ Настройки", callback_data="prof:settings")
     kb.button(text="ℹ Инфо", callback_data="prof:info")
-    kb.adjust(1, 1, 1, 2)
+    kb.adjust(1, 1, 1, 1, 2)
     return kb.as_markup()
 
 
