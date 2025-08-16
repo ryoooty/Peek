@@ -36,7 +36,6 @@ def _balance_text(user_id: int) -> str:
             lines.append(f"{dt_str} {sign}{amt} {meta}")
     lines.append("")
     lines.append("Доступно: /promo CODE — активировать промокод")
-    lines.append("Пополнить: /pay — создать заявку (временный режим)")
     return "\n".join(lines)
 
 

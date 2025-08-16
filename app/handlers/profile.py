@@ -15,6 +15,7 @@ def _settings():
     return sys.modules["app.config"].settings
 from app.scheduler import rebuild_user_jobs
 from app.handlers.balance import _balance_text
+from app.handlers.payments import cmd_pay
 from app.utils.tz import tz_keyboard
 from app.utils.telegram import safe_edit_text
 
@@ -111,9 +112,20 @@ async def cb_model(call: CallbackQuery):
 @router.callback_query(F.data == "prof:balance")
 async def cb_balance(call: CallbackQuery):
     kb = InlineKeyboardBuilder()
+    kb.button(text="Пополнить баланс", callback_data="prof:pay")
     kb.button(text="⬅ Назад", callback_data="prof:back")
     kb.adjust(1)
-    await safe_edit_text(call.message, _balance_text(call.from_user.id), reply_markup=kb.as_markup())
+    await safe_edit_text(
+        call.message,
+        _balance_text(call.from_user.id),
+        reply_markup=kb.as_markup(),
+    )
+    await call.answer()
+
+
+@router.callback_query(F.data == "prof:pay")
+async def cb_pay(call: CallbackQuery):
+    await cmd_pay(call.message)
     await call.answer()
 
 
