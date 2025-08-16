@@ -13,6 +13,7 @@ from aiogram.types import BotCommand
 from app.mw.maintenance import MaintenanceMiddleware
 from app.mw.ban import BanMiddleware
 from app.mw.chat_delay import ChatDelayMiddleware
+from app.mw.rate_limit import RateLimitLLM
 from app.config import settings, register_reload_hook
 from app import storage
 # bot.py, в main() после создания bot и dp
@@ -62,12 +63,14 @@ async def main():
     bot = Bot(token=settings.bot_token, default=DefaultBotProperties(parse_mode="HTML"))
     dp = Dispatcher(storage=MemoryStorage())
 
+    rate_limit_mw = RateLimitLLM()
     # Middlewares (внешние)
     dp.update.outer_middleware(MaintenanceMiddleware())
     dp.update.outer_middleware(SubscriptionGateMiddleware())
     dp.update.outer_middleware(TimezoneMiddleware())
     dp.update.outer_middleware(BanMiddleware())
     dp.update.outer_middleware(ChatDelayMiddleware())
+    dp.update.outer_middleware(rate_limit_mw)
 
     # Подключаем роутеры. ВАЖНО: «chats» — ПОСЛЕДНИЙ, чтобы не перехватывать slash-команды.
     dp.include_router(admin_handlers.router)
@@ -101,6 +104,7 @@ async def main():
         await dp.start_polling(bot)
     finally:
         logging.info("Bot stopped")
+        await rate_limit_mw.shutdown()
         scheduler.shutdown()
 
 
