@@ -276,10 +276,10 @@ async def cb_export(call: CallbackQuery):
         reply_markup=chat_inline_kb(chat_id, call.from_user.id).as_markup(),
     )
     try:
-        from io import BytesIO
-        bio = BytesIO(txt.encode("utf-8"))
-        bio.name = f"chat_{chat_id}.txt"
-        await call.message.answer_document(bio)
+        from aiogram.types import BufferedInputFile  # type: ignore
+
+        doc = BufferedInputFile(txt.encode("utf-8"), filename=f"chat_{chat_id}.txt")
+        await call.message.answer_document(doc)
     except Exception:
         logger.exception("Failed to export chat %s", chat_id)
 
