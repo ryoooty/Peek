@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -12,6 +13,8 @@ try:
     import yaml  # type: ignore
 except Exception:
     yaml = None  # type: ignore
+
+logger = logging.getLogger(__name__)
 
 # --------- Paths ---------
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -218,5 +221,5 @@ def reload_settings() -> Settings:
         try:
             fn(settings)
         except Exception:
-            continue
+            logger.exception("reload hook failed")
     return settings
