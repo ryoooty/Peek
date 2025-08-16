@@ -1,1 +1,10 @@
+aiohttp
+aiogram
+apscheduler
+pydantic>=2
 pydantic-settings>=2.0.0,<3.0.0
+pymupdf
+pytest
+python-docx
+pyyaml
+sqlalchemy
