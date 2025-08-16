@@ -391,19 +391,49 @@ async def _typing_loop(msg: Message, stop_evt: asyncio.Event):
 
 
 def _extract_sections(buf: str) -> tuple[list[str], str]:
+    """Extract marked sections from ``buf``.
+
+    Provider responses may optionally wrap fragments into ``/s/`` ... ``/n/``
+    markers.  When markers are missing or delayed we still want to emit
+    partial text as soon as a newline arrives.  The function therefore looks
+    for the earliest of a marker pair or a newline and returns complete
+    fragments while keeping the remainder in ``buf``.
+    """
+
     parts: list[str] = []
-    while True:
+    while buf:
         start = buf.find("/s/")
-        if start == -1:
-            return parts, buf
+        newline = buf.find("\n")
+
+        # no start marker before the next newline – flush plain text
+        if start == -1 or (0 <= newline < start):
+            if newline == -1:
+                break
+            parts.append(buf[:newline].strip())
+            buf = buf[newline + 1 :]
+            continue
+
+        # discard plain prefix before the marker
         if start > 0:
+            prefix = buf[:start]
+            for line in prefix.splitlines():
+                if line.strip():
+                    parts.append(line.strip())
             buf = buf[start:]
-            start = 0
-        end = buf.find("/n/", start + 3)
-        if end == -1:
-            return parts, buf
-        parts.append(buf[start + 3 : end].strip())
-        buf = buf[end + 3 :]
+
+        # buf now starts with '/s/'
+        end = buf.find("/n/", 3)
+        newline = buf.find("\n", 3)
+        if end == -1 and newline == -1:
+            break
+        if newline != -1 and (end == -1 or newline < end):
+            parts.append(buf[3:newline].strip())
+            buf = buf[newline + 1 :]
+        else:
+            parts.append(buf[3:end].strip())
+            buf = buf[end + 3 :]
+
+    return parts, buf
 
 
 @router.message(F.text & ~F.text.startswith("/"))
@@ -440,9 +470,16 @@ async def chatting_text(msg: Message):
                             full += (("\n" if full else "") + piece)
 
                 elif ev["kind"] == "final":
+                    if buf:
+                        extra, buf = _extract_sections(buf)
+                        for piece in extra:
+                            if piece and piece.strip():
+                                await msg.answer(piece)
+                                full += (("\n" if full else "") + piece)
                     if buf.strip():
-                        await msg.answer(buf.strip())
-                        full += (("\n" if full else "") + buf.strip())
+                        piece = buf.strip()
+                        await msg.answer(piece)
+                        full += (("\n" if full else "") + piece)
                     usage_in = int(ev.get("usage_in") or 0)
                     usage_out = int(ev.get("usage_out") or 0)
                     cost_total = float(ev.get("cost_total") or 0)
