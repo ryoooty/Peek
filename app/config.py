@@ -185,6 +185,7 @@ def _load_external_config(path: Optional[str]) -> Dict[str, Any]:
                 with open(p, "r", encoding="utf-8") as fh:
                     return json.load(fh) or {}
         except Exception:
+            logger.exception("Failed to load config from %s", p)
             continue
     return {}
 
