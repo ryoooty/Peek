@@ -107,6 +107,7 @@ async def main():
         await dp.start_polling(bot)
     finally:
         logging.info("Bot stopped")
+        await rate_limit_mw.shutdown()
         scheduler.shutdown()
         storage.close()
 
