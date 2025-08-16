@@ -291,7 +291,7 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[d
         }
 
 
-async def chat_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[dict[str, str], None]:
-    async for event in live_stream(user_id, chat_id, text):
-        yield event
+async def chat_stream(user_id: int, chat_id: int, text: str):
+    async for ev in live_stream(user_id, chat_id, text):
+        yield ev
 
