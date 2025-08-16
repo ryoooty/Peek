@@ -214,8 +214,8 @@ def reload_settings() -> Settings:
     overrides = _load_external_config(new.app_config_path)
     _apply_overrides(new, overrides)
     # применить inplace
-    for k, v in new.model_dump().items():
-        setattr(settings, k, v)
+    for field in settings.__class__.model_fields:
+        setattr(settings, field, getattr(new, field))
     config_version += 1
     # нотифицировать хуки
     for fn in list(_ReloadHooks):
