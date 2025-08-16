@@ -5,11 +5,13 @@
 
 ## Webhook endpoints
 
-The HTTP server exposes the following webhook URLs for payment providers:
+When the bot is running it also starts an `aiohttp` server on port `8080`.
+External payment providers should use the following callback URLs:
 
-| Provider         | Path                    |
-|------------------|-------------------------|
-| Boosty           | `POST /boosty/webhook`  |
-| DonationAlerts   | `POST /donationalerts/webhook` |
+| Provider       | URL                                          |
+|----------------|----------------------------------------------|
+| Boosty         | `POST http://<host>:8080/boosty/webhook`      |
+| DonationAlerts | `POST http://<host>:8080/donationalerts/webhook` |
 
-Run `python main.py` to start a simple `aiohttp` server with these routes.
+For testing the HTTP server in isolation you can still run
+`python main.py`.
