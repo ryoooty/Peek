@@ -6,6 +6,8 @@ import logging
 import os
 from pathlib import Path
 
+logger = logging.getLogger(__name__)
+
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -99,12 +101,13 @@ async def main():
         Path("run").mkdir(exist_ok=True)
         (Path("run") / "main.pid").write_text(str(os.getpid()))
     except Exception:
-        pass
+        logger.exception("failed to write pid file")
 
     try:
         await dp.start_polling(bot)
     finally:
         logging.info("Bot stopped")
+        await rate_limit_mw.shutdown()
         scheduler.shutdown()
         storage.close()
 

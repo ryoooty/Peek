@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import logging
 from typing import Optional
 
 from aiogram import Bot
@@ -10,6 +11,7 @@ from app.config import settings
 from app.character import CHAT_STYLE
 from app.providers.deepseek_openai import chat as provider_chat
 
+logger = logging.getLogger(__name__)
 
 async def can_send_now(user_id: int) -> tuple[bool, str]:
     u = storage.get_user(user_id) or {}
@@ -96,6 +98,5 @@ async def proactive_nudge(*, bot: Bot, user_id: int, chat_id: int) -> Optional[s
     try:
         await bot.send_message(chat_id=user_id, text=text)
     except Exception:
-        # fallback: игнорируем ошибки доставки
-        pass
+        logger.exception("failed to send proactive nudge to %s", user_id)
     return text

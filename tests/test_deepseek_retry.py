@@ -91,6 +91,8 @@ def test_stream_chat_retries(monkeypatch):
     ]
 
     class DummyStreamResp:
+        status = 200
+
         def __init__(self):
             async def gen():
                 for l in lines:

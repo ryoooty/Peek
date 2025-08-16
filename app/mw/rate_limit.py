@@ -74,7 +74,9 @@ class RateLimitLLM(BaseMiddleware):
             except Exception:
                 logging.exception("RateLimitLLM handler error")
 
-            if not queue.empty():
+            if queue.empty():
+                self._queues.pop(uid, None)
+            else:
                 await self._pending.put(uid)
             if self.rate:
                 await asyncio.sleep(self.rate)
