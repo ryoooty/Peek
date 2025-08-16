@@ -541,6 +541,10 @@ def is_fav_char(user_id: int, char_id: int) -> bool:
 
 
 # ------------- Chats & Messages -------------
+def update_user_chats_mode(user_id: int, new_mode: str) -> None:
+    _exec("UPDATE chats SET mode=? WHERE user_id=?", (new_mode, user_id))
+
+
 def create_chat(
     user_id: int,
     char_id: int,

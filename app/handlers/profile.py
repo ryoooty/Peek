@@ -151,6 +151,7 @@ async def cb_mode(call: CallbackQuery):
     u = storage.get_user(call.from_user.id) or {}
     new_mode = "chat" if (u.get("default_chat_mode") or "rp") == "rp" else "rp"
     storage.set_user_field(call.from_user.id, "default_chat_mode", new_mode)
+    storage.update_user_chats_mode(call.from_user.id, new_mode)
     u = storage.get_user(call.from_user.id) or {}
     await safe_edit_text(call.message, _profile_text(u), reply_markup=_profile_kb(u))
     await call.answer("Режим обновлён")
