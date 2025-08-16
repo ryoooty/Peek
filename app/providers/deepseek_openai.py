@@ -129,6 +129,9 @@ async def stream_chat(
             try:
                 async with aiohttp.ClientSession(timeout=timeout) as ses:
                     async with ses.post(url, headers=headers, json=payload) as resp:
+                        if resp.status != 200:
+                            logger.error("deepseek stream returned %s", resp.status)
+                            continue
                         try:
                             async for line in resp.content:
                                 if not line or line == b"\n":
