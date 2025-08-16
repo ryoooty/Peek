@@ -7,7 +7,7 @@ import logging
 from aiohttp import web
 from aiogram import Router, F
 from aiogram.filters import Command
-from aiogram.types import Message, InlineKeyboardButton, CallbackQuery
+from aiogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from app import storage
@@ -62,21 +62,50 @@ async def donationalerts_webhook(req: web.Request) -> web.Response:
 
 @router.message(Command("pay"))
 async def cmd_pay(msg: Message):
-    kb = InlineKeyboardBuilder()
+    rows: list[list[InlineKeyboardButton]] = []
+    row: list[InlineKeyboardButton] = []
     for opt in settings.pay_options:
         tokens = getattr(opt, "tokens", opt.get("tokens"))
         price = getattr(opt, "price_rub", opt.get("price_rub"))
         emoji = getattr(opt, "emoji", opt.get("emoji")) or ""
         text = f"{emoji + ' ' if emoji else ''}{tokens} — {price} ₽"
-        kb.button(text=text, callback_data=f"buy:{tokens}")
-    kb.adjust(2)
-    kb.row(InlineKeyboardButton(text="🪙 Мой баланс", callback_data="open_balance"))
-    await msg.answer("Пополнение баланса", reply_markup=kb.as_markup())
+        row.append(InlineKeyboardButton(text=text, callback_data=f"buy:{tokens}"))
+        if len(row) == 2:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    rows.append([InlineKeyboardButton(text="🪙 Мой баланс", callback_data="open_balance")])
+    await msg.answer(
+        "Пополнение баланса", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows)
+    )
 
 
 @router.callback_query(F.data.startswith("buy:"))
 async def cb_buy(call: CallbackQuery):
-    await call.answer("Покупка временно недоступна", show_alert=True)
+    try:
+        tokens = int((call.data or "").split(":", 1)[1])
+    except Exception:
+        return await call.answer("Некорректный запрос", show_alert=True)
+
+    option = None
+    for opt in settings.pay_options:
+        opt_tokens = int(getattr(opt, "tokens", opt.get("tokens")))
+        if opt_tokens == tokens:
+            option = opt
+            break
+
+    if not option:
+        return await call.answer("Опция недоступна", show_alert=True)
+
+    price = float(getattr(option, "price_rub", option.get("price_rub")))
+    amount = tokens / 1000.0
+    tid = storage.create_topup_pending(call.from_user.id, amount, provider="manual")
+    storage.approve_topup(tid, admin_id=0)
+    await call.message.answer(
+        f"Счёт #{tid}: {tokens} токенов за {price} ₽\n✅ Баланс пополнен",
+    )
+    await call.answer()
 
 
 @router.message(Command("confirm"))
