@@ -30,7 +30,7 @@ class DummySettings:
         self.limits = DummyLimits()
 
 
-def test_cb_set_live_win_handles_unknown_window(tmp_path, monkeypatch):
+def test_cb_set_chat_win_handles_unknown_window(tmp_path, monkeypatch):
     config_module = types.ModuleType("app.config")
     config_module.settings = DummySettings()
     config_module.BASE_DIR = ROOT
@@ -44,10 +44,10 @@ def test_cb_set_live_win_handles_unknown_window(tmp_path, monkeypatch):
     from app import storage
     from app.handlers import profile
 
-    async def dummy_cb_set_live(call):
-        dummy_cb_set_live.called = True
-    dummy_cb_set_live.called = False
-    monkeypatch.setattr(profile, "cb_set_live", dummy_cb_set_live)
+    async def dummy_cb_set_chat(call):
+        dummy_cb_set_chat.called = True
+    dummy_cb_set_chat.called = False
+    monkeypatch.setattr(profile, "cb_set_chat", dummy_cb_set_chat)
 
     storage.init(tmp_path / "db.sqlite")
     storage.ensure_user(1, "tester")
@@ -57,9 +57,9 @@ def test_cb_set_live_win_handles_unknown_window(tmp_path, monkeypatch):
 
     call = SimpleNamespace(from_user=SimpleNamespace(id=1))
 
-    asyncio.run(profile.cb_set_live_win(call))
+    asyncio.run(profile.cb_set_chat_win(call))
 
     u = storage.get_user(1)
     assert u["pro_window_local"] == "09:00-21:00"
     assert u["pro_window_utc"] == "06:00-18:00"
-    assert dummy_cb_set_live.called
+    assert dummy_cb_set_chat.called

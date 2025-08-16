@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from app import storage
 
-LIVE_STYLE = (
+CHAT_STYLE = (
     "Ты отвечаешь коротко (1–4 предложения), по делу, без лишней мета-болтовни. "
     "Сохраняй стиль персонажа и язык пользователя. "
     "Каждый итоговый ответ обрамляй маркерами '/s/' в начале и '/n/' в конце, "
@@ -12,7 +12,7 @@ LIVE_STYLE = (
 
 def get_system_prompt_for_chat(chat_id: int) -> str:
     """
-    Собираем system-подсказку из карточки персонажа + стилистика для Live (если нужно).
+    Собираем system-подсказку из карточки персонажа + стилистика для чата (если нужно).
     """
     ch = storage.get_chat(chat_id) or {}
     char = storage.get_character(int(ch.get("char_id"))) if ch else None
@@ -27,6 +27,6 @@ def get_system_prompt_for_chat(chat_id: int) -> str:
             parts.append(char["long_prompt"])
         if char.get("keywords"):
             parts.append(f"Ключевые слова: {char['keywords']}")
-    if mode == "live":
-        parts.append(LIVE_STYLE)
+    if mode == "chat":
+        parts.append(CHAT_STYLE)
     return "\n".join(p for p in parts if p)

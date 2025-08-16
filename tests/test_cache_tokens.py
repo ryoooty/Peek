@@ -58,6 +58,7 @@ def _setup(monkeypatch):
     return storage, chats
 
 
+
 class DummyResp:
     def __init__(self, text: str, usage_in: int, usage_out: int):
         self.text = text
@@ -70,6 +71,7 @@ def test_chat_turn_accumulates_cache_tokens(tmp_path, monkeypatch):
     storage.init(tmp_path / "chat.db")
     storage.ensure_user(1, "u")
     char_id = int(storage._exec("INSERT INTO characters(name) VALUES (?)", ("Char",)).lastrowid)
+
     chat_id = storage.create_chat(1, char_id)
 
     async def _collect_ctx(chat_id, **kwargs):
@@ -91,7 +93,6 @@ def test_chat_turn_accumulates_cache_tokens(tmp_path, monkeypatch):
 
     asyncio.run(chats.chat_turn(1, chat_id, "hi"))
     asyncio.run(chats.chat_turn(1, chat_id, "hi"))
-
     ch = storage.get_chat(chat_id) or {}
     assert int(ch.get("cache_tokens") or 0) == (3 + 7) + (2 + 1)
 
@@ -101,6 +102,7 @@ def test_live_stream_accumulates_cache_tokens(tmp_path, monkeypatch):
     storage.init(tmp_path / "stream.db")
     storage.ensure_user(2, "u")
     char_id = int(storage._exec("INSERT INTO characters(name) VALUES (?)", ("Char",)).lastrowid)
+
     chat_id = storage.create_chat(2, char_id)
 
     async def _collect_ctx(chat_id, **kwargs):
@@ -124,6 +126,7 @@ def test_live_stream_accumulates_cache_tokens(tmp_path, monkeypatch):
     assert int(ch.get("cache_tokens") or 0) == 5 + 7
 
 
+
 async def _consume_stream(gen):
     async for _ in gen:
         pass
@@ -135,6 +138,7 @@ def test_cache_tokens_affect_billing(tmp_path, monkeypatch):
     storage.ensure_user(3, "u")
     storage.add_toki(3, 100)
     char_id = int(storage._exec("INSERT INTO characters(name) VALUES (?)", ("Char",)).lastrowid)
+
     chat_id = storage.create_chat(3, char_id)
 
     async def _collect_ctx(chat_id, **kwargs):
@@ -157,4 +161,57 @@ def test_cache_tokens_affect_billing(tmp_path, monkeypatch):
     assert r1.billed == 1
     r2 = asyncio.run(chats.chat_turn(3, chat_id, "hi"))
     assert r2.billed == 1  # billed solely for cached tokens
+
+
+def teardown_module():
+    sys.modules.pop("app.storage", None)
+    sys.modules.pop("app.domain.chats", None)
+    sys.modules.pop("app.handlers.profile", None)
+    cfg = types.ModuleType("app.config")
+    cfg.settings = DummySettings()
+    cfg.settings.model_tariffs = {"model-a": Tariff(1.0, 1.0, 0.5), "model-b": Tariff(1.0, 1.0, 0.5)}
+    sys.modules["app.config"] = cfg
+
+
+def test_collect_context_compression_updates_cache(tmp_path, monkeypatch):
+    storage.init(tmp_path / "ctx.db")
+    storage.ensure_user(4, "u")
+    char_id = storage.ensure_character("c")
+    chat_id = storage.create_chat(4, char_id)
+    storage.add_message(chat_id, is_user=True, content="x" * 200)
+
+    config_module.settings.limits.context_threshold_tokens = 10
+    storage.add_chat_cache_tokens(chat_id, 100)
+
+    async def fake_summary(chat_id, model):
+        return chats.ChatReply(text="s", usage_in=3, usage_out=7)
+
+    monkeypatch.setattr(chats, "summarize_chat", fake_summary)
+    monkeypatch.setattr(chats, "_apply_billing", lambda *a, **k: (0, 0))
+
+    asyncio.run(chats._collect_context(chat_id, user_id=4, model="gpt-4o-mini"))
+
+    assert storage.get_chat_cache_tokens(chat_id) == 100 - 3 + 7
+
+
+def test_maybe_compress_history_updates_cache(tmp_path, monkeypatch):
+    storage.init(tmp_path / "hist.db")
+    storage.ensure_user(5, "u")
+    char_id = storage.ensure_character("c")
+    chat_id = storage.create_chat(5, char_id)
+    storage.add_message(chat_id, is_user=True, content="y" * 200)
+
+    config_module.settings.limits.context_threshold_tokens = 10
+    config_module.settings.limits.auto_compress_default = True
+    storage.add_chat_cache_tokens(chat_id, 50)
+
+    async def fake_summary(chat_id, model):
+        return chats.ChatReply(text="s", usage_in=5, usage_out=2)
+
+    monkeypatch.setattr(chats, "summarize_chat", fake_summary)
+    monkeypatch.setattr(chats, "_apply_billing", lambda *a, **k: (0, 0))
+
+    asyncio.run(chats._maybe_compress_history(5, chat_id, "gpt-4o-mini"))
+
+    assert storage.get_chat_cache_tokens(chat_id) == 50 - 5 + 2
 

@@ -103,7 +103,7 @@ def _migrate() -> None:
         default_resp_size   TEXT DEFAULT 'auto',
         default_model       TEXT,
 
-        -- Live
+        -- Chat
         proactive_enabled    INTEGER DEFAULT 1,
         pro_per_day          INTEGER DEFAULT 2,      -- дефолт: 2 раза/сутки
         pro_min_gap_min      INTEGER DEFAULT 10,     -- дефолт: 10 минут
@@ -167,6 +167,7 @@ def _migrate() -> None:
         cache_tokens  INTEGER DEFAULT 0,
         created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+
     )"""
     )
 
@@ -180,12 +181,14 @@ def _migrate() -> None:
         status      TEXT NOT NULL DEFAULT 'PENDING', -- PENDING|SENT|SKIPPED
         created_at  INTEGER NOT NULL,
         sent_at     INTEGER
+
     )"""
     )
     if not _has_col("chats", "is_favorite"):
         _exec("ALTER TABLE chats ADD COLUMN is_favorite INTEGER DEFAULT 0")
     if not _has_col("chats", "cache_tokens"):
         _exec("ALTER TABLE chats ADD COLUMN cache_tokens INTEGER DEFAULT 0")
+
         _exec(
             """
             UPDATE chats
@@ -195,6 +198,7 @@ def _migrate() -> None:
             """
         )
         _exec("UPDATE users SET cache_tokens = 0")
+
 
     # messages
     _exec(
@@ -314,6 +318,10 @@ def _migrate() -> None:
         created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
     )"""
     )
+
+    # Rename legacy mode label
+    _exec("UPDATE users SET default_chat_mode = 'chat' WHERE default_chat_mode = 'live'")
+    _exec("UPDATE chats SET mode = 'chat' WHERE mode = 'live'")
 
 
 # ------------- Users -------------
@@ -946,6 +954,7 @@ def get_cache_tokens(chat_id: int) -> int:
     """Return accumulated cache tokens for chat."""
     ch = get_chat(chat_id) or {}
     return int(ch.get("cache_tokens") or 0)
+
 
 
 def spend_tokens(user_id: int, amount: int) -> Tuple[int, int, int]:

@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 import logging
@@ -284,3 +285,4 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[d
             "cost_cache": "0",
             "cost_total": "0",
         }
+
