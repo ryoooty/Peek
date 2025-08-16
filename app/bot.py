@@ -99,15 +99,15 @@ async def main():
         Path("run").mkdir(exist_ok=True)
         (Path("run") / "main.pid").write_text(str(os.getpid()))
     except Exception:
-        logging.exception("Failed to prepare run directory")
+        pass
 
     try:
         await dp.start_polling(bot)
     finally:
         logging.info("Bot stopped")
-        await rate_limit_mw.shutdown()
         scheduler.shutdown()
-        await rate_limit_mw.shutdown()
+        storage.close()
+
 
 
 if __name__ == "__main__":

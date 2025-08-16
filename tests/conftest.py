@@ -141,3 +141,14 @@ sys.modules.setdefault("aiogram.types.input_file", input_file_mod)
 sys.modules.setdefault("aiogram.fsm", fsm_mod)
 sys.modules.setdefault("aiogram.fsm.context", fsm_context_mod)
 sys.modules.setdefault("aiogram.fsm.state", fsm_state_mod)
+
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _close_storage():
+    yield
+    mod = sys.modules.get("app.storage")
+    if mod and hasattr(mod, "close"):
+        mod.close()

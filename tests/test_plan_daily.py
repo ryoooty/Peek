@@ -70,6 +70,7 @@ def test_plan_daily_creates_future_nudge(tmp_path):
     # cleanup
     scheduler._scheduler = None
     sys.modules.pop("app.scheduler", None)
+    storage.close()
     sys.modules.pop("app.storage", None)
     sys.modules.pop("app.config", None)
 
