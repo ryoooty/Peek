@@ -8,7 +8,6 @@ from typing import AsyncGenerator
 
 from app import storage
 from app.billing.pricing import calc_usage_cost_rub
-from app.character import get_system_prompt_for_chat
 from app.config import settings
 from app.providers.deepseek_openai import (
     chat as provider_chat,
@@ -50,7 +49,12 @@ async def _collect_context(
         role = "user" if m["is_user"] else "assistant"
         res.append(dict(role=role, content=m["content"]))
 
-    system_prompt = get_system_prompt_for_chat(chat_id)
+    from app import character as _character
+
+    if getattr(_character, "storage", None) is not storage:  # pragma: no cover - test hook
+        _character.storage = storage  # type: ignore
+
+    system_prompt = _character.get_system_prompt_for_chat(chat_id)
     res = [dict(role="system", content=system_prompt)] + res
 
     threshold = int(settings.limits.context_threshold_tokens or 0)
@@ -285,4 +289,9 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[d
             "cost_cache": "0",
             "cost_total": "0",
         }
+
+
+async def chat_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[dict[str, str], None]:
+    async for event in live_stream(user_id, chat_id, text):
+        yield event
 
