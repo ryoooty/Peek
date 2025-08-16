@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any, Dict, Callable, Awaitable
 
 from aiogram import BaseMiddleware
@@ -40,6 +41,18 @@ class RateLimitLLM(BaseMiddleware):
             await self._pending.put(uid)
         return
 
+    async def shutdown(self) -> None:
+        """Cancel worker task and clear all queues."""
+        if self._worker_task:
+            self._worker_task.cancel()
+            try:
+                await self._worker_task
+            except asyncio.CancelledError:
+                pass
+            self._worker_task = None
+        self._queues.clear()
+        self._pending = asyncio.Queue()
+
     async def _worker(self) -> None:
         while True:
             uid = await self._pending.get()
@@ -50,7 +63,7 @@ class RateLimitLLM(BaseMiddleware):
             try:
                 await handler(event, data)
             except Exception:
-                pass
+                logging.exception("RateLimit handler failed")
             if not queue.empty():
                 await self._pending.put(uid)
             if self.rate:
