@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 from typing import TYPE_CHECKING
@@ -489,6 +490,8 @@ async def chatting_text(msg: Message):
         stop.set()
         try:
             await asyncio.wait_for(typer, timeout=0.1)
-        except Exception:
-            logger.exception("Typing loop cleanup failed for chat %s", msg.chat.id)
+        except asyncio.TimeoutError:
+            typer.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await typer
         _storage().set_user_chatting(msg.from_user.id, False)  # <-- диалог завершился
