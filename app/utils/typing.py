@@ -30,7 +30,7 @@ class TypingPacer:
                     # обновляем индикатор
                     await self.bot.send_chat_action(self.chat_id, "typing")
         except asyncio.CancelledError:
-            pass
+            raise
         except Exception:
             # не падаем из-за сетевых мелочей
             logger.exception("Typing pump failed for chat %s", self.chat_id)
@@ -46,6 +46,8 @@ class TypingPacer:
             self._task.cancel()
             try:
                 await self._task
+            except asyncio.CancelledError:
+                pass
             except Exception:
                 logger.exception("Typing pacer stop failed for chat %s", self.chat_id)
             self._task = None
