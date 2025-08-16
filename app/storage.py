@@ -17,7 +17,7 @@ sqlite3.register_converter("BOOLEAN", lambda v: bool(int(v)))
 _conn: sqlite3.Connection | None = None
 _conn_path: Path | None = None
 _stats_cache: Dict[str, Tuple[float, Any]] = {}
-_conn_lock = threading.Lock()
+_conn_lock = threading.RLock()
 
 
 
@@ -45,14 +45,16 @@ def close() -> None:
 
 def _exec(sql: str, params: Tuple | Dict | None = None) -> sqlite3.Cursor:
     assert _conn is not None
-    cur = _conn.execute(sql, params or ())
-    _conn.commit()
-    return cur
+    with _conn_lock:
+        cur = _conn.execute(sql, params or ())
+        _conn.commit()
+        return cur
 
 
 def _q(sql: str, params: Tuple | Dict | None = None) -> sqlite3.Cursor:
     assert _conn is not None
-    return _conn.execute(sql, params or ())
+    with _conn_lock:
+        return _conn.execute(sql, params or ())
 
 
 def query(sql: str, params: Tuple | Dict | None = None) -> List[sqlite3.Row]:
@@ -82,8 +84,9 @@ def _cache_set(key: str, value: Any) -> None:
 # ------------- Schema -------------
 def _has_col(table: str, col: str) -> bool:
     assert _conn is not None
-    cur = _conn.execute(f"PRAGMA table_info({table})")
-    return any(r[1] == col for r in cur.fetchall())
+    with _conn_lock:
+        cur = _conn.execute(f"PRAGMA table_info({table})")
+        return any(r[1] == col for r in cur.fetchall())
 
 
 def _migrate() -> None:
@@ -654,28 +657,29 @@ def add_message(
     """
 
     assert _conn is not None
-    try:
-        cur = _conn.execute(
-            "INSERT INTO messages(chat_id,is_user,content,usage_in,usage_out, usage_cost_rub) VALUES (?,?,?,?,?,?)",
-            (chat_id, 1 if is_user else 0, content, usage_in, usage_out, usage_cost_rub),
-        )
-        msg_id = int(cur.lastrowid)
-        _conn.execute(
-            "INSERT INTO messages_fts(rowid, content, chat_id, is_user) VALUES (?,?,?,?)",
-            (msg_id, content, chat_id, 1 if is_user else 0),
-        )
-        _conn.execute(
-            "UPDATE chats SET updated_at=CURRENT_TIMESTAMP WHERE id=?",
-            (chat_id,),
-        )
-    except Exception:
-        if commit:
-            _conn.rollback()
-        raise
-    else:
-        if commit:
-            _conn.commit()
-    return msg_id
+    with _conn_lock:
+        try:
+            cur = _conn.execute(
+                "INSERT INTO messages(chat_id,is_user,content,usage_in,usage_out, usage_cost_rub) VALUES (?,?,?,?,?,?)",
+                (chat_id, 1 if is_user else 0, content, usage_in, usage_out, usage_cost_rub),
+            )
+            msg_id = int(cur.lastrowid)
+            _conn.execute(
+                "INSERT INTO messages_fts(rowid, content, chat_id, is_user) VALUES (?,?,?,?)",
+                (msg_id, content, chat_id, 1 if is_user else 0),
+            )
+            _conn.execute(
+                "UPDATE chats SET updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                (chat_id,),
+            )
+        except Exception:
+            if commit:
+                _conn.rollback()
+            raise
+        else:
+            if commit:
+                _conn.commit()
+        return msg_id
 
 
 def compress_history(
@@ -687,17 +691,18 @@ def compress_history(
 ) -> None:
     """Удаляет сообщения чата и сохраняет краткое содержание."""
     assert _conn is not None
-    with _conn:
-        _conn.execute("DELETE FROM messages WHERE chat_id=?", (chat_id,))
-        _conn.execute("DELETE FROM messages_fts WHERE chat_id=?", (chat_id,))
-        add_message(
-            chat_id,
-            is_user=False,
-            content=summary,
-            usage_in=usage_in,
-            usage_out=usage_out,
-            commit=False,
-        )
+    with _conn_lock:
+        with _conn:
+            _conn.execute("DELETE FROM messages WHERE chat_id=?", (chat_id,))
+            _conn.execute("DELETE FROM messages_fts WHERE chat_id=?", (chat_id,))
+            add_message(
+                chat_id,
+                is_user=False,
+                content=summary,
+                usage_in=usage_in,
+                usage_out=usage_out,
+                commit=False,
+            )
 
 
 def list_messages(chat_id: int, *, limit: int | None = None) -> List[Dict[str, Any]]:
