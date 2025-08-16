@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from pathlib import Path
 
@@ -12,6 +13,8 @@ from aiogram.types.input_file import FSInputFile  # если будете где
 
 from app.config import BASE_DIR, settings
 from app import storage
+
+logger = logging.getLogger(__name__)
 
 router = Router(name="admin")
 
@@ -73,7 +76,7 @@ async def cmd_char_photo(msg: Message):
                 char_id = int(ps[1])
                 break
             except Exception:
-                pass
+                logger.exception("Invalid char_photo id in message: %s", source)
     if not char_id:
         return await msg.answer("Неверный id. Пример: <code>/char_photo 123</code>")
 

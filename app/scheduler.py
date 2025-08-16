@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import logging
 import random
 from typing import Optional, Dict, List
 
@@ -9,12 +10,14 @@ from aiogram import Bot
 from app import storage, runtime
 from app.config import settings
 
+logger = logging.getLogger(__name__)
 
 # APScheduler — опционально (без SQLAlchemyJobStore, чтобы не требовать SQLAlchemy)
 try:
     from apscheduler.schedulers.asyncio import AsyncIOScheduler  # type: ignore
     from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore  # type: ignore
 except Exception:
+    logger.exception("APScheduler is not available")
     AsyncIOScheduler = None  # type: ignore
     SQLAlchemyJobStore = None  # type: ignore
 
@@ -71,7 +74,7 @@ def shutdown() -> None:
         try:
             _scheduler.shutdown(wait=False)
         except Exception:
-            pass
+            logger.exception("Scheduler shutdown failed")
 
 
 def schedule_silence_check(user_id: int, chat_id: int, delay_sec: int = 600) -> None:
@@ -88,9 +91,9 @@ def schedule_silence_check(user_id: int, chat_id: int, delay_sec: int = 600) -> 
                 try:
                     _scheduler.remove_job(j.id)
                 except Exception:
-                    pass
+                    logger.exception("Failed to remove silence job %s", j.id)
     except Exception:
-        pass
+        logger.exception("Failed to clean previous silence jobs for user %s", user_id)
 
     run_at = dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=int(delay_sec))
     jid = f"silence:{user_id}:{int(run_at.timestamp())}"
@@ -124,8 +127,7 @@ def _add_job(job_id: str, trigger: str, **kw) -> None:
     try:
         _scheduler.add_job(id=job_id, trigger=trigger, replace_existing=False, **kw)  # type: ignore
     except Exception:
-        # не критично
-        pass
+        logger.exception("Failed to add job %s", job_id)
 
 
 async def _daily_bonus() -> None:
@@ -137,7 +139,7 @@ async def _daily_bonus() -> None:
         try:
             await _bot.send_message(uid, f"💰 Ежедневный бонус: +{amount} токов")
         except Exception:
-            pass
+            logger.exception("Failed to send daily bonus to %s", uid)
 
 
 async def _subs_expire() -> None:
@@ -148,7 +150,7 @@ async def _subs_expire() -> None:
         try:
             await _bot.send_message(uid, "❗️ Срок действия подписки истёк")
         except Exception:
-            pass
+            logger.exception("Failed to notify subscription expiry to %s", uid)
 
 
 def _parse_hhmm(s: str) -> tuple[int, int]:
@@ -172,6 +174,7 @@ def schedule_window_jobs_for_user(user_id: int) -> None:
         sh, sm = _parse_hhmm(s)
         eh, em = _parse_hhmm(e)
     except Exception:
+        logger.warning("Invalid window format '%s' for user %s", win, user_id)
         sh, sm = 6, 0
         eh, em = 18, 0
     for shift in (0, 1):
@@ -195,6 +198,9 @@ def schedule_window_jobs_for_user(user_id: int) -> None:
                 replace_existing=True,
             )
         except Exception:
+            logger.exception(
+                "Failed to schedule window jobs for user %s shift %s", user_id, shift
+            )
             continue
 
 
@@ -221,9 +227,9 @@ def _plan_daily(user_id: int) -> None:
                 try:
                     _scheduler.remove_job(j.id)
                 except Exception:
-                    pass
+                    logger.exception("Failed to remove job %s for user %s", j.id, user_id)
     except Exception:
-        pass
+        logger.exception("Failed to cleanup jobs for user %s", user_id)
     _user_jobs.pop(user_id, None)
 
     # поставить следующий тайминг
@@ -243,7 +249,7 @@ def _on_window_end(user_id: int) -> None:
             try:
                 _scheduler.remove_job(j.id)
             except Exception:
-                continue
+                logger.exception("Failed to remove job %s during window end", j.id)
     schedule_window_jobs_for_user(user_id)
 
 
@@ -267,6 +273,7 @@ def _get_last_chat_id(user_id: int) -> Optional[int]:
     try:
         return int(last["id"]) if last else None
     except Exception:
+        logger.exception("Failed to parse last chat id for user %s", user_id)
         return None
 
 
@@ -289,6 +296,7 @@ def _last_proactive_ts(user_id: int) -> Optional[int]:
         r = rows[0] if rows else None
         return int(r["ts"]) if r and r["ts"] else None
     except Exception:
+        logger.exception("Failed to get last proactive timestamp for user %s", user_id)
         return None
 
 
@@ -329,7 +337,7 @@ def _schedule_next(user_id: int, delay_sec: Optional[int] = None) -> None:
         storage.delete_future_plan(user_id)
         storage.insert_plan(user_id, last_chat, when_ts)
     except Exception:
-        pass
+        logger.exception("Failed to persist plan for user %s", user_id)
 
 
 
@@ -351,7 +359,7 @@ async def _tick_fill_plans():
                         has_future = True
                         break
                 except Exception:
-                    continue
+                    logger.exception("Failed to inspect job %s for user %s", j.id, uid)
 
         if not has_future:
             _schedule_next(uid)
@@ -378,7 +386,7 @@ async def _on_silence(user_id: int, chat_id: int):
                 if j.next_run_time and int(j.next_run_time.timestamp()) > now:
                     return  # план уже есть
             except Exception:
-                continue
+                logger.exception("Failed to inspect job %s for user %s", j.id, user_id)
 
     # создаём новый тайминг
     _schedule_next(user_id)
@@ -430,9 +438,11 @@ async def _try_send_nudge(user_id: int, chat_id: int) -> bool:
     try:
         from app.domain.proactive import proactive_nudge as fn  # type: ignore
     except Exception:
+        logger.exception("Failed to import domain proactive nudge")
         try:
             from app.proactive import proactive_nudge as fn  # type: ignore
         except Exception:
+            logger.exception("Failed to import fallback proactive nudge")
             fn = None
 
     if not fn or not _bot:
@@ -442,4 +452,5 @@ async def _try_send_nudge(user_id: int, chat_id: int) -> bool:
         text = await fn(bot=_bot, user_id=user_id, chat_id=chat_id)
         return bool(text)
     except Exception:
+        logger.exception("Proactive nudge call failed for user %s", user_id)
         return False
