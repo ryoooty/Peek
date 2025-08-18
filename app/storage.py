@@ -303,6 +303,7 @@ def _migrate() -> None:
     if not _has_col("topups", "receipt_file_id"):
         _exec("ALTER TABLE topups ADD COLUMN receipt_file_id TEXT")
 
+
     # broadcast log
     _exec(
         """

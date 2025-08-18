@@ -32,6 +32,7 @@ class DummySettings:
         self.admin_ids = [2]
         self.boosty_secret = None
         self.donationalerts_secret = None
+
         self.subs = SimpleNamespace(nightly_toki_bonus={})
         self.pay_requisites = "PAY"
 

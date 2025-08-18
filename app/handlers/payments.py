@@ -1,10 +1,6 @@
 from __future__ import annotations
 
-import hashlib
-import hmac
-import json
 import logging
-from aiohttp import web
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import (
@@ -14,55 +10,13 @@ from aiogram.types import (
     CallbackQuery,
 )
 
+
 from app import storage
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
 router = Router(name="payments")
-http_router = web.RouteTableDef()
-
-
-def _verify_signature(secret: str | None, body: bytes, header_sig: str | None) -> bool:
-    if not secret or not header_sig:
-        return False
-    digest = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
-    return hmac.compare_digest(digest, header_sig)
-
-
-@http_router.post("/boosty/webhook")
-async def boosty_webhook(req: web.Request) -> web.Response:
-    body = await req.read()
-    if not _verify_signature(settings.boosty_secret, body, req.headers.get("X-Signature")):
-        return web.Response(status=403)
-    try:
-        payload = json.loads(body.decode("utf-8"))
-        user_id = int(payload.get("user_id"))
-        amount = float(payload.get("amount"))
-    except Exception:
-        logger.warning("bad boosty webhook payload", exc_info=True)
-        return web.Response(status=400)
-    storage.create_topup_pending(user_id, amount, provider="boosty")
-    return web.Response(text="ok")
-
-
-@http_router.post("/donationalerts/webhook")
-async def donationalerts_webhook(req: web.Request) -> web.Response:
-    body = await req.read()
-    if not _verify_signature(
-        settings.donationalerts_secret, body, req.headers.get("X-Signature")
-    ):
-        return web.Response(status=403)
-    try:
-        payload = json.loads(body.decode("utf-8"))
-        user_id = int(payload.get("user_id"))
-        amount = float(payload.get("amount"))
-    except Exception:
-        logger.warning("bad donationalerts webhook payload", exc_info=True)
-        return web.Response(status=400)
-    storage.create_topup_pending(user_id, amount, provider="donationalerts")
-    return web.Response(text="ok")
-
 
 @router.message(Command("pay"))
 async def cmd_pay(msg: Message):
