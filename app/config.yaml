@@ -1,6 +1,9 @@
 config_version: 1
 log_level: INFO
 default_model: deepseek-chat
+payment_details: "Переведите оплату по реквизитам"
+support_chat_id: null
+support_user_id: null
 
 model_tariffs:
   deepseek-chat:
@@ -31,6 +34,8 @@ pay_options:
     price_rub: 1049
   - tokens: 10000
     price_rub: 1899
+
+pay_requisites: ""
 
 
 subs:

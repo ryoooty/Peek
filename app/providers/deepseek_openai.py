@@ -17,7 +17,9 @@ except Exception:  # pragma: no cover - aiohttp may be missing in tests
 logger = logging.getLogger(__name__)
 FALLBACK_TEXT = "⚠️ Сервис временно недоступен, попробуйте позже"
 
-_rate_limiter = asyncio.Semaphore(1)
+_rate_limiter = asyncio.Semaphore(
+    getattr(getattr(settings, "limits", None), "max_concurrent_requests", 10)
+)
 
 
 @dataclass

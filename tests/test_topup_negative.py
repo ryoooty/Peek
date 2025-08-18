@@ -51,6 +51,7 @@ def test_negative_topup_is_rejected(tmp_path, monkeypatch):
     pdf_path.write_bytes(b"%PDF-1.4\n%%EOF")
     assert pdf_path.exists()
 
+
     approved = storage.approve_topup(topup_id, admin_id=99)
     assert approved is False
     u = storage.get_user(1)

@@ -30,3 +30,4 @@ SUPPORT_CONTACT="@peek_support"
 ```
 
 Для тестового запуска HTTP‑сервера достаточно выполнить `python main.py`.
+
