@@ -30,8 +30,6 @@ class DummySettings:
             {"tokens": 1000, "price_rub": 1, "emoji": "💰"},
         ]
         self.admin_ids = []
-        self.boosty_secret = None
-        self.donationalerts_secret = None
         self.subs = SimpleNamespace(nightly_toki_bonus={})
 
 

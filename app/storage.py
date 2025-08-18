@@ -288,7 +288,7 @@ def _migrate() -> None:
     CREATE TABLE IF NOT EXISTS topups (
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id     INTEGER NOT NULL,
-        provider    TEXT,           -- 'boosty'|'donationalerts'|'manual'
+        provider    TEXT,           -- payment provider name
         amount      REAL NOT NULL,
         status      TEXT DEFAULT 'pending', -- 'pending'|'approved'|'declined'
         created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
