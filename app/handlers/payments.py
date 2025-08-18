@@ -110,19 +110,30 @@ async def cb_buy(call: CallbackQuery):
 
 @router.message(Command("confirm"))
 async def cmd_confirm(msg: Message):
-    parts = (msg.text or "").split(maxsplit=1)
+    parts = (msg.text or msg.caption or "").split(maxsplit=1)
     if len(parts) < 2:
         return await msg.answer("Укажите сумму: /confirm 150")
     try:
         amount = float(parts[1].replace(",", "."))
     except Exception:
         return await msg.answer("Некорректная сумма.")
+
+    doc = msg.document
+    if doc and (
+        doc.mime_type != "application/pdf" or int(doc.file_size or 0) > 5_000_000
+    ):
+        await msg.answer("Чек должен быть в формате PDF и не более 5 МБ. Он не прикреплён к заявке.")
+        doc = None
+
     tid = storage.create_topup_pending(msg.from_user.id, amount, provider="manual")
     # Уведомление админам
     note = f"Заявка на пополнение #{tid}\nUser: {msg.from_user.id}\nСумма: {amount}"
     for admin_id in settings.admin_ids:
         try:
-            await msg.bot.send_message(admin_id, note)
+            if doc:
+                await msg.bot.send_document(admin_id, doc.file_id, caption=note)
+            else:
+                await msg.bot.send_message(admin_id, note)
         except Exception:
             logger.exception("Failed to notify admin %s about topup %s", admin_id, tid)
     await msg.answer("Заявка отправлена на модерацию. Спасибо!")
