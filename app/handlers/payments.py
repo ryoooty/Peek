@@ -12,6 +12,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from app import storage
 from app.config import settings
+from app.utils.telegram import safe_edit_text
 
 logger = logging.getLogger(__name__)
 
@@ -156,3 +157,84 @@ async def cmd_decline(msg: Message):
         return await msg.answer("Неверный id.")
     ok = storage.decline_topup(tid, msg.from_user.id)
     await msg.answer("🚫 Заявка отклонена" if ok else "Не удалось отклонить.")
+
+
+def _format_topup(r) -> str:
+    amount = float(r["amount"])
+    tokens = int(amount * 1000)
+    price = amount
+    return (
+        f"Заявка #{r['id']}\n"
+        f"user_id: {r['user_id']}\n"
+        f"tokens: {tokens}\n"
+        f"price_rub: {price:.2f}\n"
+        f"status: {r['status']}"
+    )
+
+
+@router.message(Command("topups_queue"))
+async def cmd_topups_queue(msg: Message):
+    if msg.from_user.id not in settings.admin_ids:
+        return
+    rows = storage.query(
+        "SELECT id, user_id, amount, status FROM topups WHERE status='pending' ORDER BY id"
+    )
+    if not rows:
+        await msg.answer("Активных заявок нет.")
+        return
+    for r in rows:
+        tid = r["id"]
+        kb = InlineKeyboardBuilder()
+        kb.button(text="Подтвердить", callback_data=f"topup_appr:{tid}")
+        kb.button(text="Отклонить", callback_data=f"topup_decl:{tid}")
+        kb.button(text="Пропустить", callback_data=f"topup_skip:{tid}")
+        kb.adjust(3)
+        await msg.answer(_format_topup(r), reply_markup=kb.as_markup())
+
+
+@router.callback_query(F.data.startswith("topup_appr:"))
+async def cb_topup_approve(call: CallbackQuery):
+    if call.from_user.id not in settings.admin_ids:
+        return
+    try:
+        tid = int((call.data or "").split(":", 1)[1])
+    except Exception:
+        return await call.answer("Неверный запрос", show_alert=True)
+    ok = storage.approve_topup(tid, call.from_user.id)
+    if ok:
+        r = storage.query(
+            "SELECT id, user_id, amount, status FROM topups WHERE id=?", (tid,)
+        )
+        if r:
+            await safe_edit_text(call.message, _format_topup(r[0]), reply_markup=None)
+        await call.answer("✅ Подтверждено")
+    else:
+        await call.answer("Не удалось", show_alert=True)
+
+
+@router.callback_query(F.data.startswith("topup_decl:"))
+async def cb_topup_decline(call: CallbackQuery):
+    if call.from_user.id not in settings.admin_ids:
+        return
+    try:
+        tid = int((call.data or "").split(":", 1)[1])
+    except Exception:
+        return await call.answer("Неверный запрос", show_alert=True)
+    ok = storage.decline_topup(tid, call.from_user.id)
+    if ok:
+        r = storage.query(
+            "SELECT id, user_id, amount, status FROM topups WHERE id=?", (tid,)
+        )
+        if r:
+            await safe_edit_text(call.message, _format_topup(r[0]), reply_markup=None)
+        await call.answer("🚫 Отклонено")
+    else:
+        await call.answer("Не удалось", show_alert=True)
+
+
+@router.callback_query(F.data.startswith("topup_skip:"))
+async def cb_topup_skip(call: CallbackQuery):
+    if call.from_user.id not in settings.admin_ids:
+        return
+    await safe_edit_text(call.message, call.message.text or "", reply_markup=None)
+    await call.answer("Пропущено")
