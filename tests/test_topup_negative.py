@@ -24,7 +24,8 @@ del sys.modules["app.config"]
 def test_negative_topup_is_rejected(tmp_path):
     storage.init(tmp_path / "db.sqlite")
     storage.ensure_user(1, "alice")
-    topup_id = storage.create_topup_pending(1, -10.0, "manual")
+    topup_id = storage.create_topup_pending(1, -10, 100.0)
+    storage.attach_receipt(topup_id, "file123")
     approved = storage.approve_topup(topup_id, admin_id=99)
     assert approved is False
     u = storage.get_user(1)

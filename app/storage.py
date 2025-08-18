@@ -286,16 +286,27 @@ def _migrate() -> None:
     _exec(
         """
     CREATE TABLE IF NOT EXISTS topups (
-        id          INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id     INTEGER NOT NULL,
-        provider    TEXT,           -- 'boosty'|'donationalerts'|'manual'
-        amount      REAL NOT NULL,
-        status      TEXT DEFAULT 'pending', -- 'pending'|'approved'|'declined'
-        created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
-        approved_by INTEGER,
-        approved_at DATETIME
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id         INTEGER NOT NULL,
+        provider        TEXT,           -- 'boosty'|'donationalerts'|'manual'
+        tokens          INTEGER,
+        price_rub       REAL,
+        receipt_file_id TEXT,
+        status          TEXT DEFAULT 'waiting_receipt', -- 'waiting_receipt'|'pending'|'approved'|'declined'
+        created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+        approved_by     INTEGER,
+        approved_at     DATETIME
     )"""
     )
+    if not _has_col("topups", "tokens"):
+        _exec("ALTER TABLE topups ADD COLUMN tokens INTEGER")
+    if not _has_col("topups", "price_rub"):
+        _exec("ALTER TABLE topups ADD COLUMN price_rub REAL")
+    if not _has_col("topups", "receipt_file_id"):
+        _exec("ALTER TABLE topups ADD COLUMN receipt_file_id TEXT")
+    if not _has_col("topups", "status"):
+        _exec("ALTER TABLE topups ADD COLUMN status TEXT DEFAULT 'waiting_receipt'")
+
 
     # broadcast log
     _exec(
@@ -1192,6 +1203,27 @@ def has_pending_topup(user_id: int) -> bool:
     return r is not None
 
 
+
+def get_active_topup(user_id: int) -> Dict[str, Any] | None:
+    r = _q(
+        "SELECT * FROM topups WHERE user_id=? AND status IN ('waiting_receipt','pending') ORDER BY id DESC LIMIT 1",
+        (user_id,),
+    ).fetchone()
+    return dict(r) if r else None
+
+
+def attach_receipt(topup_id: int, file_id: str) -> None:
+    _exec(
+        "UPDATE topups SET receipt_file_id=?, status='pending' WHERE id=?",
+        (file_id, topup_id),
+    )
+
+
+def get_topup(topup_id: int) -> Dict[str, Any] | None:
+    r = _q("SELECT * FROM topups WHERE id=?", (topup_id,)).fetchone()
+    return dict(r) if r else None
+
+
 def create_transaction(topup_id: int, user_id: int, amount: float, provider: str) -> int:
     cur = _exec(
         "INSERT INTO transactions(topup_id, user_id, amount, provider) VALUES (?,?,?,?)",
@@ -1202,22 +1234,23 @@ def create_transaction(topup_id: int, user_id: int, amount: float, provider: str
 
 def approve_topup(topup_id: int, admin_id: int) -> bool:
     r = _q(
-        "SELECT user_id, amount, status, provider FROM topups WHERE id=?",
+        "SELECT user_id, tokens, price_rub, status, provider FROM topups WHERE id=?",
         (topup_id,),
     ).fetchone()
     if not r or r["status"] != "pending":
         return False
     uid = int(r["user_id"])
-    amt = float(r["amount"])
-    if amt <= 0:
+    tokens = int(r["tokens"] or 0)
+    price = float(r["price_rub"] or 0)
+    if tokens <= 0 or price <= 0:
         return False
     prov = str(r["provider"] or "")
     _exec(
         "UPDATE topups SET status='approved', approved_by=?, approved_at=CURRENT_TIMESTAMP WHERE id=?",
         (admin_id, topup_id),
     )
-    add_paid_tokens(uid, int(amt * 1000))  # пример: 1 у.е. = 1000 токенов
-    create_transaction(topup_id, uid, amt, prov)
+    add_paid_tokens(uid, tokens)
+    create_transaction(topup_id, uid, price, prov)
     return True
 
 
@@ -1231,6 +1264,13 @@ def decline_topup(topup_id: int, admin_id: int) -> bool:
         (admin_id, topup_id),
     )
     return True
+
+
+def skip_topup(tid: int) -> bool:
+    """No-op helper to leave topup unchanged when skipped."""
+    r = _q("SELECT id FROM topups WHERE id=?", (tid,)).fetchone()
+    return bool(r)
+
 
 
 # ----- Chatting flag -----
