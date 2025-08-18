@@ -8,7 +8,6 @@ from aiohttp import web
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
-from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from app import storage
 from app.config import settings
@@ -101,10 +100,11 @@ async def cb_buy(call: CallbackQuery):
     price = float(getattr(option, "price_rub", option.get("price_rub")))
     amount = tokens / 1000.0
     tid = storage.create_topup_pending(call.from_user.id, amount, provider="manual")
-    storage.approve_topup(tid, admin_id=0)
-    await call.message.answer(
-        f"Счёт #{tid}: {tokens} токенов за {price} ₽\n✅ Баланс пополнен",
+    text = (
+        f"Счёт #{tid}: {tokens} токенов за {price} ₽\n"
+        f"{settings.payment_details}"
     )
+    await call.message.answer(text)
     await call.answer()
 
 
@@ -154,5 +154,20 @@ async def cmd_decline(msg: Message):
         tid = int(parts[1])
     except Exception:
         return await msg.answer("Неверный id.")
-    ok = storage.decline_topup(tid, msg.from_user.id)
-    await msg.answer("🚫 Заявка отклонена" if ok else "Не удалось отклонить.")
+    uid = storage.decline_topup(tid, msg.from_user.id)
+    if not uid:
+        return await msg.answer("Не удалось отклонить.")
+    await msg.answer("🚫 Заявка отклонена")
+    note = f"❌ Ваше пополнение #{tid} отклонено."
+    if settings.support_user_id:
+        note += (
+            f"\nНапишите администратору: tg://user?id={settings.support_user_id}"
+        )
+    elif settings.support_chat_id:
+        note += f"\nНапишите в чат поддержки: {settings.support_chat_id}"
+    try:
+        await msg.bot.send_message(uid, note)
+    except Exception:
+        logger.exception(
+            "Failed to notify user %s about topup decline %s", uid, tid
+        )

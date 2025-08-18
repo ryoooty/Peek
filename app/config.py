@@ -113,6 +113,9 @@ class Settings(BaseSettings):
     # Payments
     boosty_secret: Optional[str] = None
     donationalerts_secret: Optional[str] = None
+    payment_details: str = ""
+    support_chat_id: Optional[int] = None
+    support_user_id: Optional[int] = None
 
     # APScheduler (persistent jobstore по желанию)
     apscheduler_persist: bool = False

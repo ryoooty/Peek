@@ -33,6 +33,9 @@ class DummySettings:
         self.boosty_secret = None
         self.donationalerts_secret = None
         self.subs = SimpleNamespace(nightly_toki_bonus={})
+        self.payment_details = "PAY"
+        self.support_chat_id = None
+        self.support_user_id = 42
 
 
 class DummyMessage:
@@ -40,6 +43,9 @@ class DummyMessage:
         self.from_user = SimpleNamespace(id=user_id)
         self.sent = []
         self.edited = []
+        self.bot = SimpleNamespace(
+            send_message=lambda uid, text, **kwargs: self.sent.append((text, kwargs.get("reply_markup")))
+        )
 
     async def answer(self, text: str, reply_markup=None):
         self.sent.append((text, reply_markup))
@@ -110,5 +116,5 @@ def test_interactive_payment_flow(tmp_path, monkeypatch):
     call_buy = DummyCall(1, data="buy:1000")
     asyncio.run(payments.cb_buy(call_buy))
     u = storage.get_user(1)
-    assert u["paid_tokens"] == 1000
-    assert call_buy.message.sent and "Баланс пополнен" in call_buy.message.sent[0][0]
+    assert u["paid_tokens"] == 0
+    assert call_buy.message.sent and "PAY" in call_buy.message.sent[0][0]
