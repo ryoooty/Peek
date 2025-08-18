@@ -111,7 +111,12 @@ class Settings(BaseSettings):
     # Maintenance
     maintenance_mode: bool = False
 
+    # Payments
+    boosty_secret: Optional[str] = None
+    donationalerts_secret: Optional[str] = None
+
     # APScheduler (persistent jobstore по желанию)
+
     apscheduler_persist: bool = False
     jobs_db_path: str = Field(default=str(BASE_DIR / "jobs.db"))
 
@@ -137,6 +142,7 @@ class Settings(BaseSettings):
     )
     toki_spend_coeff: float = 1.0
     pay_options: List[PayOption] = Field(default_factory=list)
+    pay_requisites: str = ""
 
 
     # Subscribers limits (из YAML можно поменять)

@@ -3,7 +3,13 @@ from __future__ import annotations
 import logging
 from aiogram import Router, F
 from aiogram.filters import Command
-from aiogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
+from aiogram.types import (
+    Message,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    CallbackQuery,
+)
+
 
 from app import storage
 from app.config import settings
@@ -40,6 +46,9 @@ async def cb_buy(call: CallbackQuery):
     except Exception:
         return await call.answer("Некорректный запрос", show_alert=True)
 
+    if storage.get_active_topup(call.from_user.id):
+        return await call.answer("У вас уже есть активная заявка", show_alert=True)
+
     option = None
     for opt in settings.pay_options:
         opt_tokens = int(getattr(opt, "tokens", opt.get("tokens")))
@@ -51,60 +60,110 @@ async def cb_buy(call: CallbackQuery):
         return await call.answer("Опция недоступна", show_alert=True)
 
     price = float(getattr(option, "price_rub", option.get("price_rub")))
-    amount = tokens / 1000.0
-    tid = storage.create_topup_pending(call.from_user.id, amount, provider="manual")
-    storage.approve_topup(tid, admin_id=0)
+    tid = storage.create_manual_topup(call.from_user.id, tokens, price)
     await call.message.answer(
-        f"Счёт #{tid}: {tokens} токенов за {price} ₽\n✅ Баланс пополнен",
+        f"Счёт #{tid}: {tokens} токенов за {price} ₽\n{settings.pay_requisites}\nЗагрузите PDF-чек ответом на это сообщение",
     )
     await call.answer()
 
 
-@router.message(Command("confirm"))
-async def cmd_confirm(msg: Message):
-    parts = (msg.text or "").split(maxsplit=1)
-    if len(parts) < 2:
-        return await msg.answer("Укажите сумму: /confirm 150")
-    try:
-        amount = float(parts[1].replace(",", "."))
-    except Exception:
-        return await msg.answer("Некорректная сумма.")
-    tid = storage.create_topup_pending(msg.from_user.id, amount, provider="manual")
-    # Уведомление админам
-    note = f"Заявка на пополнение #{tid}\nUser: {msg.from_user.id}\nСумма: {amount}"
+@router.message(F.document.mime_type == "application/pdf")
+async def doc_receipt(msg: Message):
+    topup = storage.get_active_topup(msg.from_user.id)
+    if not topup or topup.get("status") != "waiting_receipt":
+        await msg.answer("Нет активной заявки.")
+        return
+    storage.attach_receipt(topup["id"], msg.document.file_id)
+    await msg.answer("Чек получен, ожидайте подтверждения")
+
+    u = storage.get_user(msg.from_user.id) or {}
+    balance = int(u.get("free_toki") or 0) + int(u.get("paid_tokens") or 0)
+    caption = (
+        f"Заявка #{topup['id']}\n"
+        f"file_id: {msg.document.file_id}\n"
+        f"User: {msg.from_user.id}\n"
+        f"Баланс: {balance}\n"
+        f"Сумма: {topup['amount']}\n"
+        f"Токены: {topup['tokens']}"
+    )
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✅", callback_data=f"topup:approve:{topup['id']}"
+                ),
+                InlineKeyboardButton(
+                    text="🚫", callback_data=f"topup:decline:{topup['id']}"
+                ),
+                InlineKeyboardButton(
+                    text="➡️", callback_data=f"topup:skip:{topup['id']}"
+                ),
+            ]
+        ]
+    )
     for admin_id in settings.admin_ids:
         try:
-            await msg.bot.send_message(admin_id, note)
+            await msg.bot.send_document(
+                admin_id, msg.document.file_id, caption=caption, reply_markup=kb
+            )
         except Exception:
-            logger.exception("Failed to notify admin %s about topup %s", admin_id, tid)
-    await msg.answer("Заявка отправлена на модерацию. Спасибо!")
+            logger.exception(
+                "Failed to notify admin %s about topup %s", admin_id, topup["id"]
+            )
 
 
-@router.message(Command("approve"))
-async def cmd_approve(msg: Message):
-    if msg.from_user.id not in settings.admin_ids:
-        return
-    parts = (msg.text or "").split()
-    if len(parts) < 2:
-        return await msg.answer("Использование: /approve <topup_id>")
+@router.callback_query(F.data.startswith("topup:"))
+async def cb_topup(call: CallbackQuery):
+    if call.from_user.id not in settings.admin_ids:
+        return await call.answer()
     try:
-        tid = int(parts[1])
+        _, action, tid_s = (call.data or "").split(":", 2)
+        tid = int(tid_s)
     except Exception:
-        return await msg.answer("Неверный id.")
-    ok = storage.approve_topup(tid, msg.from_user.id)
-    await msg.answer("✅ Заявка одобрена" if ok else "Не удалось одобрить.")
+        return await call.answer("Некорректный запрос", show_alert=True)
+
+    topup = storage.get_topup(tid)
+    if not topup:
+        return await call.answer("Не найдено", show_alert=True)
+
+    if action == "approve":
+        ok = storage.approve_topup(tid, call.from_user.id)
+        if ok:
+            await call.message.edit_caption(
+                (call.message.caption or "") + "\n\n✅ Одобрено", reply_markup=None
+            )
+            try:
+                await call.bot.send_message(
+                    topup["user_id"], f"Счёт #{tid} одобрен. Баланс пополнен."
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to notify user %s about topup %s",
+                    topup["user_id"],
+                    tid,
+                )
+            return await call.answer("Одобрено")
+        return await call.answer("Не удалось", show_alert=True)
+    if action == "decline":
+        ok = storage.decline_topup(tid, call.from_user.id)
+        if ok:
+            await call.message.edit_caption(
+                (call.message.caption or "") + "\n\n🚫 Отклонено", reply_markup=None
+            )
+            try:
+                await call.bot.send_message(
+                    topup["user_id"], f"Счёт #{tid} отклонён."
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to notify user %s about topup %s",
+                    topup["user_id"],
+                    tid,
+                )
+            return await call.answer("Отклонено")
+        return await call.answer("Не удалось", show_alert=True)
+    if action == "skip":
+        await call.message.edit_reply_markup(None)
+        return await call.answer("Пропущено")
 
 
-@router.message(Command("decline"))
-async def cmd_decline(msg: Message):
-    if msg.from_user.id not in settings.admin_ids:
-        return
-    parts = (msg.text or "").split()
-    if len(parts) < 2:
-        return await msg.answer("Использование: /decline <topup_id>")
-    try:
-        tid = int(parts[1])
-    except Exception:
-        return await msg.answer("Неверный id.")
-    ok = storage.decline_topup(tid, msg.from_user.id)
-    await msg.answer("🚫 Заявка отклонена" if ok else "Не удалось отклонить.")
