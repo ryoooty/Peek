@@ -29,23 +29,27 @@ class DummySettings:
         self.pay_options = [
             {"tokens": 1000, "price_rub": 1, "emoji": "💰"},
         ]
-        self.admin_ids = []
+        self.admin_ids = [2]
         self.boosty_secret = None
         self.donationalerts_secret = None
+
         self.subs = SimpleNamespace(nightly_toki_bonus={})
         self.payment_details = "PAY"
         self.support_chat_id = None
         self.support_user_id = 42
 
 
+
 class DummyMessage:
-    def __init__(self, user_id: int):
+    def __init__(self, user_id: int, bot: DummyBot | None = None):
         self.from_user = SimpleNamespace(id=user_id)
+        self.bot = bot or DummyBot()
         self.sent = []
         self.edited = []
         self.bot = SimpleNamespace(
             send_message=lambda uid, text, **kwargs: self.sent.append((text, kwargs.get("reply_markup")))
         )
+
 
     async def answer(self, text: str, reply_markup=None):
         self.sent.append((text, reply_markup))
@@ -53,13 +57,18 @@ class DummyMessage:
     async def edit_text(self, text: str, reply_markup=None):
         self.edited.append((text, reply_markup))
 
+    async def edit_caption(self, caption: str, reply_markup=None):
+        self.caption = caption
+        self.edited.append((caption, reply_markup))
+
 
 class DummyCall:
-    def __init__(self, user_id: int, data: str = ""):
+    def __init__(self, user_id: int, data: str = "", bot: DummyBot | None = None):
         self.from_user = SimpleNamespace(id=user_id)
         self.data = data
-        self.message = DummyMessage(user_id)
+        self.message = DummyMessage(user_id, bot)
         self.answered = []
+        self.bot = self.message.bot
 
     async def answer(self, text: str | None = None, *args, **kwargs):
         if text:
@@ -101,20 +110,23 @@ def test_interactive_payment_flow(tmp_path, monkeypatch):
     storage.init(tmp_path / "db.sqlite")
     storage.ensure_user(1, "alice")
 
+    bot = DummyBot()
+
     # user opens balance screen
-    call_balance = DummyCall(1)
+    call_balance = DummyCall(1, bot=bot)
     asyncio.run(profile.cb_balance(call_balance))
     assert call_balance.message.edited
     assert call_balance.message.edited[0][0].startswith("<b>Баланс")
 
     # user presses the top up button
-    call_pay = DummyCall(1)
+    call_pay = DummyCall(1, bot=bot)
     asyncio.run(profile.cb_pay(call_pay))
     assert call_pay.message.sent and call_pay.message.sent[0][0] == "Пополнение баланса"
 
     # user selects a pay option
-    call_buy = DummyCall(1, data="buy:1000")
+    call_buy = DummyCall(1, data="buy:1000", bot=bot)
     asyncio.run(payments.cb_buy(call_buy))
     u = storage.get_user(1)
     assert u["paid_tokens"] == 0
     assert call_buy.message.sent and "PAY" in call_buy.message.sent[0][0]
+

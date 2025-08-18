@@ -35,6 +35,8 @@ pay_options:
   - tokens: 10000
     price_rub: 1899
 
+pay_requisites: ""
+
 
 subs:
   free:
