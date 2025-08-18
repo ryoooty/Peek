@@ -140,6 +140,7 @@ class Settings(BaseSettings):
     )
     toki_spend_coeff: float = 1.0
     pay_options: List[PayOption] = Field(default_factory=list)
+    pay_requisites: str = ""
 
 
     # Subscribers limits (из YAML можно поменять)
