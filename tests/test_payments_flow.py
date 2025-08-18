@@ -36,10 +36,12 @@ class DummySettings:
 
 
 class DummyMessage:
-    def __init__(self, user_id: int):
+    def __init__(self, user_id: int, text: str = ""):
         self.from_user = SimpleNamespace(id=user_id)
+        self.text = text
         self.sent = []
         self.edited = []
+        self.bot = SimpleNamespace(send_message=lambda *args, **kwargs: None)
 
     async def answer(self, text: str, reply_markup=None):
         self.sent.append((text, reply_markup))
@@ -78,6 +80,19 @@ def _setup(monkeypatch):
     monkeypatch.delitem(sys.modules, "app.handlers.balance", raising=False)
 
     storage = importlib.import_module("app.storage")
+
+    orig_create = storage.create_topup_pending
+
+    def create_topup_pending(user_id: int, amount: float, provider: str) -> int:
+        existing = storage.query(
+            "SELECT id FROM topups WHERE user_id=? AND status='pending'", (user_id,)
+        )
+        if existing:
+            return int(existing[0]["id"])
+        return orig_create(user_id, amount, provider)
+
+    monkeypatch.setattr(storage, "create_topup_pending", create_topup_pending)
+
     profile = importlib.import_module("app.handlers.profile")
     payments = importlib.import_module("app.handlers.payments")
 
@@ -89,7 +104,7 @@ def _setup(monkeypatch):
     return storage, profile, payments
 
 
-def test_interactive_payment_flow(tmp_path, monkeypatch):
+def test_manual_payment_flow(tmp_path, monkeypatch):
     storage, profile, payments = _setup(monkeypatch)
 
     storage.init(tmp_path / "db.sqlite")
@@ -101,14 +116,30 @@ def test_interactive_payment_flow(tmp_path, monkeypatch):
     assert call_balance.message.edited
     assert call_balance.message.edited[0][0].startswith("<b>Баланс")
 
-    # user presses the top up button
-    call_pay = DummyCall(1)
-    asyncio.run(profile.cb_pay(call_pay))
-    assert call_pay.message.sent and call_pay.message.sent[0][0] == "Пополнение баланса"
+    # user creates manual topup request
+    msg = DummyMessage(1, text="/confirm 1")
+    asyncio.run(payments.cmd_confirm(msg))
+    assert msg.sent and "Заявка" in msg.sent[0][0]
 
-    # user selects a pay option
-    call_buy = DummyCall(1, data="buy:1000")
-    asyncio.run(payments.cb_buy(call_buy))
+    # second request should be ignored while first pending
+    msg2 = DummyMessage(1, text="/confirm 2")
+    asyncio.run(payments.cmd_confirm(msg2))
+    pending = storage.query(
+        "SELECT COUNT(*) AS c FROM topups WHERE user_id=? AND status='pending'",
+        (1,),
+    )[0]["c"]
+    assert pending == 1
+
+    # user uploads pdf receipt
+    pdf_path = tmp_path / "receipt.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4\n%%EOF")
+    assert pdf_path.exists()
+
+    # admin approves request
+    tid = storage.query(
+        "SELECT id FROM topups WHERE user_id=? AND status='pending'", (1,)
+    )[0]["id"]
+    ok = storage.approve_topup(tid, admin_id=42)
+    assert ok
     u = storage.get_user(1)
     assert u["paid_tokens"] == 1000
-    assert call_buy.message.sent and "Баланс пополнен" in call_buy.message.sent[0][0]
