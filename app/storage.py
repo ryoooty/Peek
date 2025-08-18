@@ -307,6 +307,7 @@ def _migrate() -> None:
     if not _has_col("topups", "status"):
         _exec("ALTER TABLE topups ADD COLUMN status TEXT DEFAULT 'waiting_receipt'")
 
+
     # broadcast log
     _exec(
         """
@@ -1214,6 +1215,34 @@ def delete_topup(tid: int) -> None:
     _exec("DELETE FROM topups WHERE id=?", (tid,))
 
 
+def create_manual_topup(user_id: int, tokens: int, price_rub: float) -> int:
+    cur = _exec(
+        "INSERT INTO topups(user_id, amount, tokens, provider, status) VALUES (?,?,?,?, 'waiting_receipt')",
+        (user_id, float(price_rub), int(tokens), 'manual'),
+    )
+    return int(cur.lastrowid)
+
+
+def get_active_topup(user_id: int) -> Dict[str, Any] | None:
+    r = _q(
+        "SELECT * FROM topups WHERE user_id=? AND status IN ('waiting_receipt','pending') ORDER BY id DESC LIMIT 1",
+        (user_id,),
+    ).fetchone()
+    return dict(r) if r else None
+
+
+def attach_receipt(topup_id: int, file_id: str) -> None:
+    _exec(
+        "UPDATE topups SET receipt_file_id=?, status='pending' WHERE id=?",
+        (file_id, topup_id),
+    )
+
+
+def get_topup(topup_id: int) -> Dict[str, Any] | None:
+    r = _q("SELECT * FROM topups WHERE id=?", (topup_id,)).fetchone()
+    return dict(r) if r else None
+
+
 def create_transaction(topup_id: int, user_id: int, amount: float, provider: str) -> int:
     cur = _exec(
         "INSERT INTO transactions(topup_id, user_id, amount, provider) VALUES (?,?,?,?)",
@@ -1260,6 +1289,7 @@ def skip_topup(tid: int) -> bool:
     """No-op helper to leave topup unchanged when skipped."""
     r = _q("SELECT id FROM topups WHERE id=?", (tid,)).fetchone()
     return bool(r)
+
 
 
 # ----- Chatting flag -----

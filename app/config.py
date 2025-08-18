@@ -69,6 +69,7 @@ class LimitsConfig(BaseModel):
     proactive_enabled: bool = True
     request_timeout_seconds: int = 60
     request_attempts: int = 3
+    max_concurrent_requests: int = 10
     proactive_cost_tokens: int = 0  # стоимость 1 проактивного после 2 free в биллинговых токенах
     chat_split_nl_count: int = 3
     auto_compress_default: bool = True
@@ -115,6 +116,7 @@ class Settings(BaseSettings):
     donationalerts_secret: Optional[str] = None
 
     # APScheduler (persistent jobstore по желанию)
+
     apscheduler_persist: bool = False
     jobs_db_path: str = Field(default=str(BASE_DIR / "jobs.db"))
 
@@ -140,6 +142,7 @@ class Settings(BaseSettings):
     )
     toki_spend_coeff: float = 1.0
     pay_options: List[PayOption] = Field(default_factory=list)
+    pay_requisites: str = ""
 
 
     # Subscribers limits (из YAML можно поменять)

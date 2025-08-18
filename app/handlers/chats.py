@@ -341,7 +341,8 @@ async def import_doc(msg: Message, state: FSMContext):
         else:
             await msg.answer("Не удалось извлечь текст из файла.")
     except Exception:
-        await msg.answer("Ошибка при импорте.")
+        logger.exception("Import failed", exc_info=True)
+        await msg.answer("Ошибка при импорте файла")
     finally:
         await state.clear()
 
