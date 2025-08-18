@@ -1178,49 +1178,30 @@ def log_proactive(
 
 
 # ------------- Payments -------------
-def create_topup_pending(user_id: int, tokens: int, price_rub: float) -> int:
-    """Create a manual topup request waiting for receipt attachment."""
+def create_topup_pending(user_id: int, amount: float, provider: str) -> int:
     cur = _exec(
-        "INSERT INTO topups(user_id, tokens, price_rub, provider, status)"
-        " VALUES (?,?,?,?,'waiting_receipt')",
-        (user_id, int(tokens), float(price_rub), "manual"),
+        "INSERT INTO topups(user_id, amount, provider, status) VALUES (?,?,?, 'pending')",
+        (user_id, float(amount), provider),
     )
     return int(cur.lastrowid)
 
 
-def user_pending_topup(user_id: int) -> Optional[Dict[str, Any]]:
-    """Return existing pending or waiting topup for user if any."""
+def get_topup(topup_id: int):
+    return _q("SELECT * FROM topups WHERE id=?", (topup_id,)).fetchone()
+
+
+def delete_topup(topup_id: int) -> bool:
+    cur = _exec("DELETE FROM topups WHERE id=? AND status='pending'", (topup_id,))
+    return cur.rowcount > 0
+
+
+def has_pending_topup(user_id: int) -> bool:
     r = _q(
-        "SELECT * FROM topups WHERE user_id=? AND status IN ('waiting_receipt','pending')"
-        " ORDER BY id DESC LIMIT 1",
+        "SELECT 1 FROM topups WHERE user_id=? AND status='pending' LIMIT 1",
         (user_id,),
     ).fetchone()
-    return dict(r) if r else None
+    return r is not None
 
-
-def attach_receipt(topup_id: int, file_id: str) -> bool:
-    """Attach receipt file to topup and mark it pending for review."""
-    r = _q("SELECT status FROM topups WHERE id=?", (topup_id,)).fetchone()
-    if not r or r["status"] != "waiting_receipt":
-        return False
-    _exec(
-        "UPDATE topups SET receipt_file_id=?, status='pending' WHERE id=?",
-        (file_id, topup_id),
-    )
-    return True
-
-
-def delete_topup(tid: int) -> None:
-    """Remove topup entry completely."""
-    _exec("DELETE FROM topups WHERE id=?", (tid,))
-
-
-def create_manual_topup(user_id: int, tokens: int, price_rub: float) -> int:
-    cur = _exec(
-        "INSERT INTO topups(user_id, amount, tokens, provider, status) VALUES (?,?,?,?, 'waiting_receipt')",
-        (user_id, float(price_rub), int(tokens), 'manual'),
-    )
-    return int(cur.lastrowid)
 
 
 def get_active_topup(user_id: int) -> Dict[str, Any] | None:
