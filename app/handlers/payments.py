@@ -9,7 +9,6 @@ from aiohttp import web
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
-from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from app import storage
 from app.config import settings
@@ -39,10 +38,7 @@ async def boosty_webhook(req: web.Request) -> web.Response:
     except Exception:
         logger.warning("bad boosty webhook payload", exc_info=True)
         return web.Response(status=400)
-    tokens = int(amount * 1000)
-    tid = storage.create_topup_pending(user_id, tokens, amount)
-    storage.attach_receipt(tid, "-")
-    storage.approve_topup(tid, admin_id=0)
+    storage.create_topup_pending(user_id, amount, provider="boosty")
     return web.Response(text="ok")
 
 
@@ -60,10 +56,7 @@ async def donationalerts_webhook(req: web.Request) -> web.Response:
     except Exception:
         logger.warning("bad donationalerts webhook payload", exc_info=True)
         return web.Response(status=400)
-    tokens = int(amount * 1000)
-    tid = storage.create_topup_pending(user_id, tokens, amount)
-    storage.attach_receipt(tid, "-")
-    storage.approve_topup(tid, admin_id=0)
+    storage.create_topup_pending(user_id, amount, provider="donationalerts")
     return web.Response(text="ok")
 
 
@@ -106,13 +99,15 @@ async def cb_buy(call: CallbackQuery):
         return await call.answer("Опция недоступна", show_alert=True)
 
     price = float(getattr(option, "price_rub", option.get("price_rub")))
-    tid = storage.create_topup_pending(call.from_user.id, tokens, price)
-    storage.attach_receipt(tid, "-")
-    storage.approve_topup(tid, admin_id=0)
-    await call.message.answer(
-        f"Счёт #{tid}: {tokens} токенов за {price} ₽\n✅ Баланс пополнен",
+    amount = tokens / 1000.0
+    tid = storage.create_topup_pending(call.from_user.id, amount, provider="manual")
+    text = (
+        f"Счёт #{tid}: {tokens} токенов за {price} ₽\n"
+        f"{settings.payment_details}"
     )
+    await call.message.answer(text)
     await call.answer()
+
 
 
 @router.message(Command("confirm"))
@@ -265,97 +260,28 @@ async def doc_receipt(msg: Message):
     if not topup or topup.get("status") != "waiting_receipt":
         await msg.answer("Нет активной заявки.")
         return
-    storage.attach_receipt(topup["id"], msg.document.file_id)
-    await msg.answer("Чек получен, ожидайте подтверждения")
-
-    u = storage.get_user(msg.from_user.id) or {}
-    balance = int(u.get("free_toki") or 0) + int(u.get("paid_tokens") or 0)
-    caption = (
-        f"Заявка #{topup['id']}\n"
-        f"file_id: {msg.document.file_id}\n"
-        f"User: {msg.from_user.id}\n"
-        f"Баланс: {balance}\n"
-        f"Сумма: {topup['amount']}\n"
-        f"Токены: {topup['tokens']}"
-    )
-    kb = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="✅", callback_data=f"topup:approve:{topup['id']}"
-                ),
-                InlineKeyboardButton(
-                    text="🚫", callback_data=f"topup:decline:{topup['id']}"
-                ),
-                InlineKeyboardButton(
-                    text="➡️", callback_data=f"topup:skip:{topup['id']}"
-                ),
-            ]
-        ]
-    )
-    for admin_id in settings.admin_ids:
-        try:
-            await msg.bot.send_document(
-                admin_id, msg.document.file_id, caption=caption, reply_markup=kb
-            )
-        except Exception:
-            logger.exception(
-                "Failed to notify admin %s about topup %s", admin_id, topup["id"]
-            )
-
-
-@router.callback_query(F.data.startswith("topup:"))
-async def cb_topup(call: CallbackQuery):
-    if call.from_user.id not in settings.admin_ids:
-        return await call.answer()
+    parts = (msg.text or "").split()
+    if len(parts) < 2:
+        return await msg.answer("Использование: /decline <topup_id>")
     try:
-        _, action, tid_s = (call.data or "").split(":", 2)
-        tid = int(tid_s)
+        tid = int(parts[1])
     except Exception:
-        return await call.answer("Некорректный запрос", show_alert=True)
-
-    topup = storage.get_topup(tid)
-    if not topup:
-        return await call.answer("Не найдено", show_alert=True)
-
-    if action == "approve":
-        ok = storage.approve_topup(tid, call.from_user.id)
-        if ok:
-            await call.message.edit_caption(
-                (call.message.caption or "") + "\n\n✅ Одобрено", reply_markup=None
-            )
-            try:
-                await call.bot.send_message(
-                    topup["user_id"], f"Счёт #{tid} одобрен. Баланс пополнен."
-                )
-            except Exception:
-                logger.exception(
-                    "Failed to notify user %s about topup %s",
-                    topup["user_id"],
-                    tid,
-                )
-            return await call.answer("Одобрено")
-        return await call.answer("Не удалось", show_alert=True)
-    if action == "decline":
-        ok = storage.decline_topup(tid, call.from_user.id)
-        if ok:
-            await call.message.edit_caption(
-                (call.message.caption or "") + "\n\n🚫 Отклонено", reply_markup=None
-            )
-            try:
-                await call.bot.send_message(
-                    topup["user_id"], f"Счёт #{tid} отклонён."
-                )
-            except Exception:
-                logger.exception(
-                    "Failed to notify user %s about topup %s",
-                    topup["user_id"],
-                    tid,
-                )
-            return await call.answer("Отклонено")
-        return await call.answer("Не удалось", show_alert=True)
-    if action == "skip":
-        await call.message.edit_reply_markup(None)
-        return await call.answer("Пропущено")
-
+        return await msg.answer("Неверный id.")
+    uid = storage.decline_topup(tid, msg.from_user.id)
+    if not uid:
+        return await msg.answer("Не удалось отклонить.")
+    await msg.answer("🚫 Заявка отклонена")
+    note = f"❌ Ваше пополнение #{tid} отклонено."
+    if settings.support_user_id:
+        note += (
+            f"\nНапишите администратору: tg://user?id={settings.support_user_id}"
+        )
+    elif settings.support_chat_id:
+        note += f"\nНапишите в чат поддержки: {settings.support_chat_id}"
+    try:
+        await msg.bot.send_message(uid, note)
+    except Exception:
+        logger.exception(
+            "Failed to notify user %s about topup decline %s", uid, tid
+        )
 

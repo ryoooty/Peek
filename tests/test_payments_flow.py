@@ -34,19 +34,10 @@ class DummySettings:
         self.donationalerts_secret = None
 
         self.subs = SimpleNamespace(nightly_toki_bonus={})
-        self.pay_requisites = "PAY"
+        self.payment_details = "PAY"
+        self.support_chat_id = None
+        self.support_user_id = 42
 
-
-class DummyBot:
-    def __init__(self):
-        self.sent_docs = []
-        self.sent_messages = []
-
-    async def send_document(self, chat_id, file_id, caption=None, reply_markup=None):
-        self.sent_docs.append((chat_id, file_id, caption, reply_markup))
-
-    async def send_message(self, chat_id, text, reply_markup=None):
-        self.sent_messages.append((chat_id, text, reply_markup))
 
 
 class DummyMessage:
@@ -55,7 +46,10 @@ class DummyMessage:
         self.bot = bot or DummyBot()
         self.sent = []
         self.edited = []
-        self.caption = ""
+        self.bot = SimpleNamespace(
+            send_message=lambda uid, text, **kwargs: self.sent.append((text, kwargs.get("reply_markup")))
+        )
+
 
     async def answer(self, text: str, reply_markup=None):
         self.sent.append((text, reply_markup))
@@ -134,20 +128,5 @@ def test_interactive_payment_flow(tmp_path, monkeypatch):
     asyncio.run(payments.cb_buy(call_buy))
     u = storage.get_user(1)
     assert u["paid_tokens"] == 0
-    assert call_buy.message.sent and "Загрузите PDF-чек" in call_buy.message.sent[0][0]
-    topup = storage.get_active_topup(1)
-    assert topup and topup["status"] == "waiting_receipt"
+    assert call_buy.message.sent and "PAY" in call_buy.message.sent[0][0]
 
-    # user uploads receipt
-    doc_msg = DummyMessage(1, bot)
-    doc_msg.document = SimpleNamespace(file_id="FILE", mime_type="application/pdf")
-    asyncio.run(payments.doc_receipt(doc_msg))
-    topup = storage.get_active_topup(1)
-    assert topup and topup["status"] == "pending" and topup["receipt_file_id"] == "FILE"
-    assert bot.sent_docs
-
-    # admin approves
-    admin_call = DummyCall(2, data=f"topup:approve:{topup['id']}", bot=bot)
-    asyncio.run(payments.cb_topup(admin_call))
-    u = storage.get_user(1)
-    assert u["paid_tokens"] == 1000

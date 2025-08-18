@@ -1255,15 +1255,19 @@ def approve_topup(topup_id: int, admin_id: int) -> bool:
 
 
 
-def decline_topup(topup_id: int, admin_id: int) -> bool:
-    r = _q("SELECT id, status FROM topups WHERE id=?", (topup_id,)).fetchone()
+def decline_topup(topup_id: int, admin_id: int) -> int | None:
+    r = _q(
+        "SELECT id, user_id, status FROM topups WHERE id=?",
+        (topup_id,),
+    ).fetchone()
     if not r or r["status"] != "pending":
-        return False
+        return None
+    uid = int(r["user_id"])
     _exec(
         "UPDATE topups SET status='declined', approved_by=?, approved_at=CURRENT_TIMESTAMP WHERE id=?",
         (admin_id, topup_id),
     )
-    return True
+    return uid
 
 
 def skip_topup(tid: int) -> bool:
