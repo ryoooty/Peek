@@ -73,6 +73,7 @@ def init(bot: Bot) -> None:
     _add_job("proactive:tick", "interval", minutes=1, func=_tick_fill_plans)
     _add_job("bonus:daily", "cron", hour=0, minute=5, func=_daily_bonus)
     _add_job("subs:expire", "cron", hour=0, minute=10, func=_subs_expire)
+    _add_job("topups:expire", "cron", minute=0, func=_topups_expire)
 
 
 def shutdown() -> None:
@@ -157,6 +158,19 @@ async def _subs_expire() -> None:
             await _bot.send_message(uid, "❗️ Срок действия подписки истёк")
         except Exception:
             logger.exception("Failed to notify subscription expiry to %s", uid)
+
+
+async def _topups_expire() -> None:
+    uids = storage.expire_old_topups(getattr(settings, "topup_expire_hours", 48))
+    if not _bot or not uids:
+        return
+    for uid in uids:
+        try:
+            await _bot.send_message(
+                uid, "❗️ Заявка на пополнение устарела, пожалуйста, подайте новую"
+            )
+        except Exception:
+            logger.exception("Failed to notify topup expiry to %s", uid)
 
 
 def _parse_hhmm(s: str) -> tuple[int, int]:

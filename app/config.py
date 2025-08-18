@@ -114,6 +114,7 @@ class Settings(BaseSettings):
     # Payments
     boosty_secret: Optional[str] = None
     donationalerts_secret: Optional[str] = None
+    topup_expire_hours: int = 48
 
     # APScheduler (persistent jobstore по желанию)
     apscheduler_persist: bool = False

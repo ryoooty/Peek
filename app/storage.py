@@ -291,11 +291,15 @@ def _migrate() -> None:
         provider    TEXT,           -- 'boosty'|'donationalerts'|'manual'
         amount      REAL NOT NULL,
         status      TEXT DEFAULT 'pending', -- 'pending'|'approved'|'declined'
-        created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+        created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         approved_by INTEGER,
         approved_at DATETIME
     )"""
     )
+    if not _has_col("topups", "created_at"):
+        _exec(
+            "ALTER TABLE topups ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+        )
 
     # broadcast log
     _exec(
@@ -1214,6 +1218,30 @@ def decline_topup(topup_id: int, admin_id: int) -> bool:
         (admin_id, topup_id),
     )
     return True
+
+
+def expire_old_topups(max_age_hours: int) -> List[int]:
+    """Remove outdated topup requests and return affected user IDs."""
+    if max_age_hours <= 0:
+        return []
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=int(max_age_hours))
+    cutoff_str = cutoff.strftime("%Y-%m-%d %H:%M:%S")
+    rows = _q(
+        """
+        SELECT DISTINCT user_id FROM topups
+         WHERE status IN ('waiting_receipt','pending')
+           AND created_at < ?
+        """,
+        (cutoff_str,),
+    ).fetchall()
+    if not rows:
+        return []
+    uids = [int(r["user_id"]) for r in rows]
+    _exec(
+        "DELETE FROM topups WHERE status IN ('waiting_receipt','pending') AND created_at < ?",
+        (cutoff_str,),
+    )
+    return uids
 
 
 # ----- Chatting flag -----
