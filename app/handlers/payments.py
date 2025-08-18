@@ -38,7 +38,10 @@ async def boosty_webhook(req: web.Request) -> web.Response:
     except Exception:
         logger.warning("bad boosty webhook payload", exc_info=True)
         return web.Response(status=400)
-    storage.create_topup_pending(user_id, amount, provider="boosty")
+    tokens = int(amount * 1000)
+    tid = storage.create_topup_pending(user_id, tokens, amount)
+    storage.attach_receipt(tid, "-")
+    storage.approve_topup(tid, admin_id=0)
     return web.Response(text="ok")
 
 
@@ -56,7 +59,10 @@ async def donationalerts_webhook(req: web.Request) -> web.Response:
     except Exception:
         logger.warning("bad donationalerts webhook payload", exc_info=True)
         return web.Response(status=400)
-    storage.create_topup_pending(user_id, amount, provider="donationalerts")
+    tokens = int(amount * 1000)
+    tid = storage.create_topup_pending(user_id, tokens, amount)
+    storage.attach_receipt(tid, "-")
+    storage.approve_topup(tid, admin_id=0)
     return web.Response(text="ok")
 
 
@@ -99,8 +105,8 @@ async def cb_buy(call: CallbackQuery):
         return await call.answer("Опция недоступна", show_alert=True)
 
     price = float(getattr(option, "price_rub", option.get("price_rub")))
-    amount = tokens / 1000.0
-    tid = storage.create_topup_pending(call.from_user.id, amount, provider="manual")
+    tid = storage.create_topup_pending(call.from_user.id, tokens, price)
+    storage.attach_receipt(tid, "-")
     storage.approve_topup(tid, admin_id=0)
     await call.message.answer(
         f"Счёт #{tid}: {tokens} токенов за {price} ₽\n✅ Баланс пополнен",
@@ -114,12 +120,16 @@ async def cmd_confirm(msg: Message):
     if len(parts) < 2:
         return await msg.answer("Укажите сумму: /confirm 150")
     try:
-        amount = float(parts[1].replace(",", "."))
+        price = float(parts[1].replace(",", "."))
     except Exception:
         return await msg.answer("Некорректная сумма.")
-    tid = storage.create_topup_pending(msg.from_user.id, amount, provider="manual")
+    tokens = int(price * 1000)
+    tid = storage.create_topup_pending(msg.from_user.id, tokens, price)
     # Уведомление админам
-    note = f"Заявка на пополнение #{tid}\nUser: {msg.from_user.id}\nСумма: {amount}"
+    note = (
+        f"Заявка на пополнение #{tid}\nUser: {msg.from_user.id}\n"
+        f"Сумма: {price} ₽ ({tokens} токенов)"
+    )
     for admin_id in settings.admin_ids:
         try:
             await msg.bot.send_message(admin_id, note)
