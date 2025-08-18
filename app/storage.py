@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import sqlite3
 import threading
 import time
@@ -18,6 +19,9 @@ _conn: sqlite3.Connection | None = None
 _conn_path: Path | None = None
 _stats_cache: Dict[str, Tuple[float, Any]] = {}
 _conn_lock = threading.RLock()
+
+
+topups_logger = logging.getLogger("topups")
 
 
 
@@ -1183,7 +1187,16 @@ def create_topup_pending(user_id: int, amount: float, provider: str) -> int:
         "INSERT INTO topups(user_id, amount, provider, status) VALUES (?,?,?, 'pending')",
         (user_id, float(amount), provider),
     )
-    return int(cur.lastrowid)
+    tid = int(cur.lastrowid)
+    tokens = int(float(amount) * 1000)
+    topups_logger.info(
+        "user_id=%s tid=%s status=pending amount=%.3f tokens=%d",
+        user_id,
+        tid,
+        float(amount),
+        tokens,
+    )
+    return tid
 
 
 def get_topup(topup_id: int):
@@ -1249,31 +1262,43 @@ def approve_topup(topup_id: int, admin_id: int) -> bool:
         "UPDATE topups SET status='approved', approved_by=?, approved_at=CURRENT_TIMESTAMP WHERE id=?",
         (admin_id, topup_id),
     )
-    add_paid_tokens(uid, tokens)
-    create_transaction(topup_id, uid, price, prov)
+    tokens = int(amt * 1000)
+    add_paid_tokens(uid, tokens)  # пример: 1 у.е. = 1000 токенов
+    create_transaction(topup_id, uid, amt, prov)
+    topups_logger.info(
+        "user_id=%s tid=%s status=approved amount=%.3f tokens=%d",
+        uid,
+        topup_id,
+        amt,
+        tokens,
+    )
     return True
 
 
 
-def decline_topup(topup_id: int, admin_id: int) -> int | None:
+def decline_topup(topup_id: int, admin_id: int) -> bool:
     r = _q(
-        "SELECT id, user_id, status FROM topups WHERE id=?",
+        "SELECT user_id, amount, status FROM topups WHERE id=?",
         (topup_id,),
     ).fetchone()
     if not r or r["status"] != "pending":
-        return None
+        return False
     uid = int(r["user_id"])
+    amt = float(r["amount"])
+
     _exec(
         "UPDATE topups SET status='declined', approved_by=?, approved_at=CURRENT_TIMESTAMP WHERE id=?",
         (admin_id, topup_id),
     )
-    return uid
-
-
-def skip_topup(tid: int) -> bool:
-    """No-op helper to leave topup unchanged when skipped."""
-    r = _q("SELECT id FROM topups WHERE id=?", (tid,)).fetchone()
-    return bool(r)
+    tokens = int(amt * 1000)
+    topups_logger.info(
+        "user_id=%s tid=%s status=declined amount=%.3f tokens=%d",
+        uid,
+        topup_id,
+        amt,
+        tokens,
+    )
+    return True
 
 
 
