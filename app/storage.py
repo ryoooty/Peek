@@ -290,26 +290,20 @@ def _migrate() -> None:
     _exec(
         """
     CREATE TABLE IF NOT EXISTS topups (
-        id              INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id         INTEGER NOT NULL,
-        provider        TEXT,           -- 'boosty'|'donationalerts'|'manual'
-        tokens          INTEGER,
-        price_rub       REAL,
-        receipt_file_id TEXT,
-        status          TEXT DEFAULT 'waiting_receipt', -- 'waiting_receipt'|'pending'|'approved'|'declined'
-        created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
-        approved_by     INTEGER,
-        approved_at     DATETIME
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id     INTEGER NOT NULL,
+        provider    TEXT,           -- 'boosty'|'donationalerts'|'manual'
+        amount      REAL NOT NULL,
+        status      TEXT DEFAULT 'pending', -- 'pending'|'approved'|'declined'
+        created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        approved_by INTEGER,
+        approved_at DATETIME
     )"""
     )
-    if not _has_col("topups", "tokens"):
-        _exec("ALTER TABLE topups ADD COLUMN tokens INTEGER")
-    if not _has_col("topups", "price_rub"):
-        _exec("ALTER TABLE topups ADD COLUMN price_rub REAL")
-    if not _has_col("topups", "receipt_file_id"):
-        _exec("ALTER TABLE topups ADD COLUMN receipt_file_id TEXT")
-    if not _has_col("topups", "status"):
-        _exec("ALTER TABLE topups ADD COLUMN status TEXT DEFAULT 'waiting_receipt'")
+    if not _has_col("topups", "created_at"):
+        _exec(
+            "ALTER TABLE topups ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+        )
 
 
     # broadcast log
@@ -1277,28 +1271,39 @@ def approve_topup(topup_id: int, admin_id: int) -> bool:
 
 
 def decline_topup(topup_id: int, admin_id: int) -> bool:
-    r = _q(
-        "SELECT user_id, amount, status FROM topups WHERE id=?",
-        (topup_id,),
-    ).fetchone()
+    r = _q("SELECT id, status FROM topups WHERE id=?", (topup_id,)).fetchone()
     if not r or r["status"] != "pending":
         return False
-    uid = int(r["user_id"])
-    amt = float(r["amount"])
-
     _exec(
         "UPDATE topups SET status='declined', approved_by=?, approved_at=CURRENT_TIMESTAMP WHERE id=?",
         (admin_id, topup_id),
     )
-    tokens = int(amt * 1000)
-    topups_logger.info(
-        "user_id=%s tid=%s status=declined amount=%.3f tokens=%d",
-        uid,
-        topup_id,
-        amt,
-        tokens,
-    )
     return True
+
+
+def expire_old_topups(max_age_hours: int) -> List[int]:
+    """Remove outdated topup requests and return affected user IDs."""
+    if max_age_hours <= 0:
+        return []
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=int(max_age_hours))
+    cutoff_str = cutoff.strftime("%Y-%m-%d %H:%M:%S")
+    rows = _q(
+        """
+        SELECT DISTINCT user_id FROM topups
+         WHERE status IN ('waiting_receipt','pending')
+           AND created_at < ?
+        """,
+        (cutoff_str,),
+    ).fetchall()
+    if not rows:
+        return []
+    uids = [int(r["user_id"]) for r in rows]
+    _exec(
+        "DELETE FROM topups WHERE status IN ('waiting_receipt','pending') AND created_at < ?",
+        (cutoff_str,),
+    )
+    return uids
+
 
 
 
