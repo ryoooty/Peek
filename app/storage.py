@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import sqlite3
 import threading
 import time
@@ -18,6 +19,9 @@ _conn: sqlite3.Connection | None = None
 _conn_path: Path | None = None
 _stats_cache: Dict[str, Tuple[float, Any]] = {}
 _conn_lock = threading.RLock()
+
+
+topups_logger = logging.getLogger("topups")
 
 
 
@@ -286,16 +290,27 @@ def _migrate() -> None:
     _exec(
         """
     CREATE TABLE IF NOT EXISTS topups (
-        id          INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id     INTEGER NOT NULL,
-        provider    TEXT,           -- 'boosty'|'donationalerts'|'manual'
-        amount      REAL NOT NULL,
-        status      TEXT DEFAULT 'pending', -- 'pending'|'approved'|'declined'
-        created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
-        approved_by INTEGER,
-        approved_at DATETIME
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id         INTEGER NOT NULL,
+        provider        TEXT,           -- 'boosty'|'donationalerts'|'manual'
+        tokens          INTEGER,
+        price_rub       REAL,
+        receipt_file_id TEXT,
+        status          TEXT DEFAULT 'waiting_receipt', -- 'waiting_receipt'|'pending'|'approved'|'declined'
+        created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+        approved_by     INTEGER,
+        approved_at     DATETIME
     )"""
     )
+    if not _has_col("topups", "tokens"):
+        _exec("ALTER TABLE topups ADD COLUMN tokens INTEGER")
+    if not _has_col("topups", "price_rub"):
+        _exec("ALTER TABLE topups ADD COLUMN price_rub REAL")
+    if not _has_col("topups", "receipt_file_id"):
+        _exec("ALTER TABLE topups ADD COLUMN receipt_file_id TEXT")
+    if not _has_col("topups", "status"):
+        _exec("ALTER TABLE topups ADD COLUMN status TEXT DEFAULT 'waiting_receipt'")
+
 
     # broadcast log
     _exec(
@@ -1172,7 +1187,54 @@ def create_topup_pending(user_id: int, amount: float, provider: str) -> int:
         "INSERT INTO topups(user_id, amount, provider, status) VALUES (?,?,?, 'pending')",
         (user_id, float(amount), provider),
     )
-    return int(cur.lastrowid)
+    tid = int(cur.lastrowid)
+    tokens = int(float(amount) * 1000)
+    topups_logger.info(
+        "user_id=%s tid=%s status=pending amount=%.3f tokens=%d",
+        user_id,
+        tid,
+        float(amount),
+        tokens,
+    )
+    return tid
+
+
+def get_topup(topup_id: int):
+    return _q("SELECT * FROM topups WHERE id=?", (topup_id,)).fetchone()
+
+
+def delete_topup(topup_id: int) -> bool:
+    cur = _exec("DELETE FROM topups WHERE id=? AND status='pending'", (topup_id,))
+    return cur.rowcount > 0
+
+
+def has_pending_topup(user_id: int) -> bool:
+    r = _q(
+        "SELECT 1 FROM topups WHERE user_id=? AND status='pending' LIMIT 1",
+        (user_id,),
+    ).fetchone()
+    return r is not None
+
+
+
+def get_active_topup(user_id: int) -> Dict[str, Any] | None:
+    r = _q(
+        "SELECT * FROM topups WHERE user_id=? AND status IN ('waiting_receipt','pending') ORDER BY id DESC LIMIT 1",
+        (user_id,),
+    ).fetchone()
+    return dict(r) if r else None
+
+
+def attach_receipt(topup_id: int, file_id: str) -> None:
+    _exec(
+        "UPDATE topups SET receipt_file_id=?, status='pending' WHERE id=?",
+        (file_id, topup_id),
+    )
+
+
+def get_topup(topup_id: int) -> Dict[str, Any] | None:
+    r = _q("SELECT * FROM topups WHERE id=?", (topup_id,)).fetchone()
+    return dict(r) if r else None
 
 
 def create_transaction(topup_id: int, user_id: int, amount: float, provider: str) -> int:
@@ -1185,35 +1247,59 @@ def create_transaction(topup_id: int, user_id: int, amount: float, provider: str
 
 def approve_topup(topup_id: int, admin_id: int) -> bool:
     r = _q(
-        "SELECT user_id, amount, status, provider FROM topups WHERE id=?",
+        "SELECT user_id, tokens, price_rub, status, provider FROM topups WHERE id=?",
         (topup_id,),
     ).fetchone()
     if not r or r["status"] != "pending":
         return False
     uid = int(r["user_id"])
-    amt = float(r["amount"])
-    if amt <= 0:
+    tokens = int(r["tokens"] or 0)
+    price = float(r["price_rub"] or 0)
+    if tokens <= 0 or price <= 0:
         return False
     prov = str(r["provider"] or "")
     _exec(
         "UPDATE topups SET status='approved', approved_by=?, approved_at=CURRENT_TIMESTAMP WHERE id=?",
         (admin_id, topup_id),
     )
-    add_paid_tokens(uid, int(amt * 1000))  # пример: 1 у.е. = 1000 токенов
+    tokens = int(amt * 1000)
+    add_paid_tokens(uid, tokens)  # пример: 1 у.е. = 1000 токенов
     create_transaction(topup_id, uid, amt, prov)
+    topups_logger.info(
+        "user_id=%s tid=%s status=approved amount=%.3f tokens=%d",
+        uid,
+        topup_id,
+        amt,
+        tokens,
+    )
     return True
 
 
 
 def decline_topup(topup_id: int, admin_id: int) -> bool:
-    r = _q("SELECT id, status FROM topups WHERE id=?", (topup_id,)).fetchone()
+    r = _q(
+        "SELECT user_id, amount, status FROM topups WHERE id=?",
+        (topup_id,),
+    ).fetchone()
     if not r or r["status"] != "pending":
         return False
+    uid = int(r["user_id"])
+    amt = float(r["amount"])
+
     _exec(
         "UPDATE topups SET status='declined', approved_by=?, approved_at=CURRENT_TIMESTAMP WHERE id=?",
         (admin_id, topup_id),
     )
+    tokens = int(amt * 1000)
+    topups_logger.info(
+        "user_id=%s tid=%s status=declined amount=%.3f tokens=%d",
+        uid,
+        topup_id,
+        amt,
+        tokens,
+    )
     return True
+
 
 
 # ----- Chatting flag -----

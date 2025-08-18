@@ -93,6 +93,7 @@ class Settings(BaseSettings):
     # Base
     bot_token: str
     admin_ids: List[int] = Field(default_factory=list)
+    support_id: Optional[int] = None
     db_path: str = Field(default=str(BASE_DIR / "data.db"))
     env: str = Field(default="dev")
     log_level: str = Field(default="INFO")
@@ -114,10 +115,14 @@ class Settings(BaseSettings):
     # Payments
     boosty_secret: Optional[str] = None
     donationalerts_secret: Optional[str] = None
+    payment_details: str = ""
+    support_chat_id: Optional[int] = None
+    support_user_id: Optional[int] = None
 
     # APScheduler (persistent jobstore по желанию)
     apscheduler_persist: bool = False
     jobs_db_path: str = Field(default=str(BASE_DIR / "jobs.db"))
+
 
     # YAML overrides path (если нужен внешний конфиг)
     app_config_path: Optional[str] = Field(default=None)
@@ -141,6 +146,7 @@ class Settings(BaseSettings):
     )
     toki_spend_coeff: float = 1.0
     pay_options: List[PayOption] = Field(default_factory=list)
+    pay_requisites: str = ""
 
 
     # Subscribers limits (из YAML можно поменять)
