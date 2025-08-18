@@ -1175,6 +1175,23 @@ def create_topup_pending(user_id: int, amount: float, provider: str) -> int:
     return int(cur.lastrowid)
 
 
+def get_topup(topup_id: int):
+    return _q("SELECT * FROM topups WHERE id=?", (topup_id,)).fetchone()
+
+
+def delete_topup(topup_id: int) -> bool:
+    cur = _exec("DELETE FROM topups WHERE id=? AND status='pending'", (topup_id,))
+    return cur.rowcount > 0
+
+
+def has_pending_topup(user_id: int) -> bool:
+    r = _q(
+        "SELECT 1 FROM topups WHERE user_id=? AND status='pending' LIMIT 1",
+        (user_id,),
+    ).fetchone()
+    return r is not None
+
+
 def create_transaction(topup_id: int, user_id: int, amount: float, provider: str) -> int:
     cur = _exec(
         "INSERT INTO transactions(topup_id, user_id, amount, provider) VALUES (?,?,?,?)",

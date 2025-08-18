@@ -92,6 +92,7 @@ class Settings(BaseSettings):
     # Base
     bot_token: str
     admin_ids: List[int] = Field(default_factory=list)
+    support_id: Optional[int] = None
     db_path: str = Field(default=str(BASE_DIR / "data.db"))
     env: str = Field(default="dev")
     log_level: str = Field(default="INFO")
