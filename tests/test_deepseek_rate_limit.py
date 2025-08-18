@@ -29,6 +29,8 @@ def test_chat_rate_limit(monkeypatch):
     class DummyResp:
         def __init__(self):
             self._data = {"choices": [{"message": {"content": "ok"}}], "usage": {}}
+            self.status = 200
+            self.status = 200
 
         async def json(self):
             return self._data
@@ -147,3 +149,75 @@ def test_stream_rate_limit(monkeypatch):
     asyncio.run(run())
 
     assert events[:3] == ["post", "sleep", "post"]
+
+
+def test_max_concurrent_requests(monkeypatch):
+    events = []
+    blocker = asyncio.Event()
+
+    class DummyResp:
+        def __init__(self):
+            self._data = {"choices": [{"message": {"content": "ok"}}], "usage": {}}
+            self.status = 200
+
+        async def json(self):
+            await blocker.wait()
+            return self._data
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            pass
+
+    class DummySession:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            pass
+
+        def post(self, *args, **kwargs):
+            events.append("post")
+            return DummyResp()
+
+    class DummyAiohttp:
+        ClientTimeout = lambda **kw: None
+        ClientSession = DummySession
+
+    limits = SimpleNamespace(
+        rate_limit_seconds=1,
+        request_timeout_seconds=60,
+        request_attempts=1,
+        max_concurrent_requests=10,
+    )
+    settings = SimpleNamespace(deepseek_base_url="", deepseek_api_key=None, limits=limits)
+    monkeypatch.setattr(provider, "settings", settings)
+    monkeypatch.setattr(provider, "aiohttp", DummyAiohttp)
+    monkeypatch.setattr(
+        provider, "_rate_limiter", asyncio.Semaphore(settings.limits.max_concurrent_requests)
+    )
+
+    orig_sleep = asyncio.sleep
+
+    async def fake_sleep(delay):
+        await orig_sleep(0)
+
+    monkeypatch.setattr(provider.asyncio, "sleep", fake_sleep)
+
+    async def run():
+        tasks = [
+            asyncio.create_task(provider.chat(model="m", messages=[]))
+            for _ in range(11)
+        ]
+        await asyncio.sleep(0)
+        assert len(events) == 10
+        blocker.set()
+        await asyncio.gather(*tasks)
+
+    asyncio.run(run())
+
+    assert len(events) == 11
