@@ -281,8 +281,10 @@ async def cb_export(call: CallbackQuery):
 
         doc = BufferedInputFile(txt.encode("utf-8"), filename=f"chat_{chat_id}.txt")
         await call.message.answer_document(doc)
+        await call.answer()
     except Exception:
         logger.exception("Failed to export chat %s", chat_id)
+        await call.answer("Не удалось экспортировать чат", show_alert=True)
 
 
 @router.callback_query(F.data.startswith("chat:import:"))
