@@ -1,5 +1,7 @@
 import sys
 import types
+import pytest
+import asyncio
 
 # --- temporary stubs for required modules ---
 prev_config = sys.modules.get("app.config")
@@ -38,7 +40,9 @@ def schedule_silence_check(*args, **kwargs):
 scheduler.schedule_silence_check = schedule_silence_check
 sys.modules["app.scheduler"] = scheduler
 
-from app.handlers.chats import _extract_sections
+import app.handlers.chats as chats_module
+_extract_sections = chats_module._extract_sections
+chatting_text = chats_module.chatting_text
 
 # restore modules to avoid leaking to other tests
 if prev_config is not None:
@@ -67,3 +71,66 @@ def test_extract_sections_streaming():
         pieces.extend(parts)
     assert pieces == ["Hello", "World"]
     assert buf == ""
+
+
+def test_chat_stream_single_chunk_split(monkeypatch):
+    # prepare dummy message and storage
+    class DummyBot:
+        async def send_chat_action(self, *args, **kwargs):
+            pass
+
+    class DummyMessage:
+        def __init__(self):
+            self.from_user = types.SimpleNamespace(id=1)
+            self.chat = types.SimpleNamespace(id=1)
+            self.bot = DummyBot()
+            self.text = "hi"
+            self.answers: list[str] = []
+
+        async def answer(self, text, **kwargs):
+            self.answers.append(text)
+
+    class DummyStorage:
+        def get_last_chat(self, user_id):
+            return {"id": 1, "mode": "chat"}
+
+        def touch_activity(self, user_id):
+            pass
+
+        def add_message(self, *args, **kwargs):
+            pass
+
+        def set_user_chatting(self, *args, **kwargs):
+            pass
+
+    async def fake_chat_stream(user_id, chat_id, text):
+        yield {
+            "kind": "chunk",
+            "text": (
+                "Alpha bravo charlie delta. "
+                "Echo foxtrot golf hotel. "
+                "India juliet kilo lima."
+            ),
+        }
+        yield {"kind": "final", "usage_in": 0, "usage_out": 0}
+
+    async def fake_typing_loop(msg, stop_evt):
+        pass
+
+    monkeypatch.setattr(chats_module, "chat_stream", fake_chat_stream)
+    monkeypatch.setattr(chats_module, "storage", DummyStorage())
+    monkeypatch.setattr(chats_module, "_typing_loop", fake_typing_loop)
+    monkeypatch.setattr(chats_module, "FALLBACK_FLUSH_CHARS", 50)
+
+    async def no_sleep(*args, **kwargs):
+        pass
+
+    monkeypatch.setattr(chats_module.asyncio, "sleep", no_sleep)
+
+    msg = DummyMessage()
+    asyncio.run(chatting_text(msg))
+
+    assert msg.answers == [
+        "Alpha bravo charlie delta.",
+        "Echo foxtrot golf hotel. India juliet kilo lima.",
+    ]

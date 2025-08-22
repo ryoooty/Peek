@@ -451,6 +451,41 @@ def _extract_sections(buf: str, *, force: bool = False) -> tuple[list[str], str]
     return parts, buf
 
 
+def _fallback_segments(text: str) -> list[str]:
+    """Split plain ``text`` into chunks for manual flushing.
+
+    The provider may return a full answer in a single chunk or only in the
+    final event.  To preserve the live-mode cadence we split such text into
+    reasonably sized fragments, preferring sentence boundaries and falling back
+    to ``FALLBACK_FLUSH_CHARS``.
+    """
+
+    if len(text) <= FALLBACK_FLUSH_CHARS:
+        return [text.strip()]
+
+    sentences = re.split(r"(?<=[.!?])\s+", text)
+    chunks: list[str] = []
+    buf = ""
+    for sent in sentences:
+        if not sent:
+            continue
+        candidate = f"{buf} {sent}".strip() if buf else sent.strip()
+        if len(candidate) <= FALLBACK_FLUSH_CHARS:
+            buf = candidate
+            continue
+        if buf:
+            chunks.append(buf.strip())
+        if len(sent) <= FALLBACK_FLUSH_CHARS:
+            buf = sent.strip()
+        else:
+            for i in range(0, len(sent), FALLBACK_FLUSH_CHARS):
+                chunks.append(sent[i : i + FALLBACK_FLUSH_CHARS].strip())
+            buf = ""
+    if buf:
+        chunks.append(buf.strip())
+    return chunks
+
+
 @router.message(F.text & ~F.text.startswith("/"))
 async def chatting_text(msg: Message):
     # Определяем активный чат (последний «открытый»)
@@ -494,23 +529,39 @@ async def chatting_text(msg: Message):
                         or now - last_flush >= FALLBACK_FLUSH_SECONDS
                     ):
                         extra, buf = _extract_sections(buf, force=True)
-                        for piece in extra:
-                            if piece and piece.strip():
-                                await msg.answer(piece)
-                                full += (("\n" if full else "") + piece)
-                        last_flush = now
+                        if not full and len(extra) == 1 and not buf:
+                            # Single big chunk with no markers – keep in buffer
+                            buf = extra[0]
+                        else:
+                            for piece in extra:
+                                if piece and piece.strip():
+                                    await msg.answer(piece)
+                                    full += (("\n" if full else "") + piece)
+                            last_flush = now
 
                 elif ev["kind"] == "final":
+                    # provider may deliver remaining text either in ``buf`` or
+                    # directly within the final event
+                    final_text = ev.get("text") or ""
+                    if final_text:
+                        buf += final_text
+
+                    pieces: list[str] = []
                     if buf:
-                        extra, buf = _extract_sections(buf)
-                        for piece in extra:
-                            if piece and piece.strip():
-                                await msg.answer(piece)
-                                full += (("\n" if full else "") + piece)
-                    if buf.strip():
-                        piece = buf.strip()
+                        parts, buf = _extract_sections(buf, force=True)
+                        # if the whole reply arrived at once (no prior chunks
+                        # and a single part), split it manually to imitate
+                        # streaming cadence
+                        if not full and len(parts) == 1:
+                            pieces = _fallback_segments(parts[0])
+                        else:
+                            pieces = [p for p in parts if p and p.strip()]
+
+                    for idx, piece in enumerate(pieces):
                         await msg.answer(piece)
                         full += (("\n" if full else "") + piece)
+                        if len(pieces) > 1 and idx < len(pieces) - 1:
+                            await asyncio.sleep(FALLBACK_FLUSH_SECONDS)
                     usage_in = int(ev.get("usage_in") or 0)
                     usage_out = int(ev.get("usage_out") or 0)
                     _storage().add_message(
