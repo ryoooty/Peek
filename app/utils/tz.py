@@ -6,12 +6,11 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 def tz_keyboard(prefix: str = "tz") -> InlineKeyboardMarkup:
     keyboard = []
     row = []
-    for offset in range(-12 * 60, 14 * 60 + 1, 30):
+    for offset in range(-12 * 60, 12 * 60 + 1, 60):
         abs_offset = abs(offset)
         hours = abs_offset // 60
-        minutes = abs_offset % 60
         sign = "+" if offset >= 0 else "-"
-        text = f"UTC{sign}{hours:02d}:{minutes:02d}"
+        text = f"UTC{sign}{hours:02d}"
         data = f"{prefix}:{offset}"
         row.append(InlineKeyboardButton(text=text, callback_data=data))
         if len(row) == 4:
@@ -19,5 +18,6 @@ def tz_keyboard(prefix: str = "tz") -> InlineKeyboardMarkup:
             row = []
     if row:
         keyboard.append(row)
+    keyboard.append([InlineKeyboardButton(text="Пропустить", callback_data=f"{prefix}:skip")])
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
