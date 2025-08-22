@@ -111,6 +111,10 @@ router = Router(name="chats")
 
 FEATURE_USAGE_MSG = os.getenv("FEATURE_USAGE_MSG") == "1"
 
+# Fallback flush limits when provider does not send section markers or newlines
+FALLBACK_FLUSH_SECONDS = 1.0
+FALLBACK_FLUSH_CHARS = 200
+
 if TYPE_CHECKING:
     from app import storage as storage_module
 
@@ -395,14 +399,15 @@ async def _typing_loop(msg: Message, stop_evt: asyncio.Event):
         logger.exception("Typing loop failed for chat %s", msg.chat.id)
 
 
-def _extract_sections(buf: str) -> tuple[list[str], str]:
+def _extract_sections(buf: str, *, force: bool = False) -> tuple[list[str], str]:
     """Extract marked sections from ``buf``.
 
     Provider responses may optionally wrap fragments into ``/s/`` ... ``/n/``
     markers.  When markers are missing or delayed we still want to emit
     partial text as soon as a newline arrives.  The function therefore looks
     for the earliest of a marker pair or a newline and returns complete
-    fragments while keeping the remainder in ``buf``.
+    fragments while keeping the remainder in ``buf``.  If ``force`` is true
+    any remaining buffer is returned as a final fragment.
     """
 
     parts: list[str] = []
@@ -438,6 +443,10 @@ def _extract_sections(buf: str) -> tuple[list[str], str]:
             parts.append(buf[3:end].strip())
             buf = buf[end + 3 :]
 
+    if force and buf.strip():
+        parts.append(buf.strip())
+        buf = ""
+
     return parts, buf
 
 
@@ -464,15 +473,31 @@ async def chatting_text(msg: Message):
         if mode == "chat":
             full = ""
             buf = ""
+            loop = asyncio.get_running_loop()
+            last_flush = loop.time()
 
             async for ev in chat_stream(msg.from_user.id, chat_id, user_text):
                 if ev["kind"] == "chunk":
                     buf += ev["text"]
                     parts, buf = _extract_sections(buf)
+                    if parts:
+                        last_flush = loop.time()
                     for piece in parts:
                         if piece and piece.strip():
                             await msg.answer(piece)
                             full += (("\n" if full else "") + piece)
+
+                    now = loop.time()
+                    if buf and (
+                        len(buf) >= FALLBACK_FLUSH_CHARS
+                        or now - last_flush >= FALLBACK_FLUSH_SECONDS
+                    ):
+                        extra, buf = _extract_sections(buf, force=True)
+                        for piece in extra:
+                            if piece and piece.strip():
+                                await msg.answer(piece)
+                                full += (("\n" if full else "") + piece)
+                        last_flush = now
 
                 elif ev["kind"] == "final":
                     if buf:
