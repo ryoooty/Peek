@@ -14,7 +14,7 @@ from app.app_defs import APPS, COMBOS
 
 from app import storage
 from app.config import settings
-from app.utils.tz import tz_keyboard
+from app.utils.tz import tz_keyboard, parse_tz_offset
 from app.utils.telegram import safe_edit_text
 
 router = Router(name="user")
@@ -54,7 +54,7 @@ async def start_deeplink(msg: Message, command: CommandObject | None = None):
     if not await _check_subscription(msg):
         return
     u = storage.get_user(msg.from_user.id) or {}
-    if not u.get("tz_offset_min"):
+    if u.get("tz_offset_min") is None:
         await msg.answer("Выберите ваш часовой пояс:", reply_markup=tz_keyboard(prefix="tz"))
         return
     payload = (command.args or "").strip() if command else ""
@@ -76,7 +76,7 @@ async def start_plain(msg: Message):
     if not await _check_subscription(msg):
         return
     u = storage.get_user(msg.from_user.id) or {}
-    if not u.get("tz_offset_min"):
+    if u.get("tz_offset_min") is None:
         await msg.answer("Выберите ваш часовой пояс:", reply_markup=tz_keyboard(prefix="tz"))
         return
     await msg.answer("Здравствуйте!", reply_markup=main_menu_kb(msg.from_user.id))
@@ -84,15 +84,30 @@ async def start_plain(msg: Message):
 
 @router.callback_query(F.data.startswith("tz:"))
 async def cb_set_tz(call: CallbackQuery):
+    data = call.data or ""
+    if data.endswith(":skip"):
+        offset_min = 0  # UTC by default
+        storage.set_user_field(call.from_user.id, "tz_offset_min", offset_min)
+        await safe_edit_text(
+            call.message,
+            "Часовой пояс не задан. Используется UTC.",
+            callback=call,
+        )
+        await call.message.answer(
+            "Здравствуйте!", reply_markup=main_menu_kb(call.from_user.id)
+        )
+        await call.answer()
+        return
     try:
-        # offset is provided in minutes
-        offset_min = int(call.data.split(":", 1)[1])
-    except Exception:
+        offset_min = parse_tz_offset(data)
+    except ValueError:
         await call.answer("Некорректное значение", show_alert=True)
         return
     storage.set_user_field(call.from_user.id, "tz_offset_min", offset_min)
     await safe_edit_text(call.message, "Часовой пояс сохранён.", callback=call)
-    await call.message.answer("Здравствуйте!", reply_markup=main_menu_kb(call.from_user.id))
+    await call.message.answer(
+        "Здравствуйте!", reply_markup=main_menu_kb(call.from_user.id)
+    )
     await call.answer()
 
 

@@ -40,22 +40,31 @@ class DummySettings:
 
 
 
+class DummyBot:
+    def __init__(self):
+        self.sent = []
+
+    async def send_message(self, *args, **kwargs):
+        self.sent.append((args, kwargs))
+
+
 class DummyMessage:
-    def __init__(self, user_id: int, text: str = ""):
+    def __init__(self, user_id: int, bot: DummyBot | None = None, text: str = ""):
         self.from_user = SimpleNamespace(id=user_id)
         self.text = text
         self.sent = []
         self.edited = []
-        self.bot = SimpleNamespace(send_message=lambda *args, **kwargs: None)
+        self.bot = bot or DummyBot()
+        self.document = None
 
 
     async def answer(self, text: str, reply_markup=None):
         self.sent.append((text, reply_markup))
 
-    async def edit_text(self, text: str, reply_markup=None):
+    async def edit_text(self, text: str, reply_markup=None, **kwargs):
         self.edited.append((text, reply_markup))
 
-    async def edit_caption(self, caption: str, reply_markup=None):
+    async def edit_caption(self, caption: str, reply_markup=None, **kwargs):
         self.caption = caption
         self.edited.append((caption, reply_markup))
 
