@@ -152,9 +152,7 @@ def _migrate() -> None:
         slug         TEXT UNIQUE,
         name         TEXT NOT NULL,
         fandom       TEXT,
-        short_prompt TEXT,
-        mid_prompt   TEXT,
-        long_prompt  TEXT,
+        prompt       TEXT,
         keywords     TEXT,
         photo_id     TEXT,
         info_short   TEXT,   -- краткая инфа для карточки
@@ -170,6 +168,25 @@ def _migrate() -> None:
     # +++
     if not _has_col("characters", "photo_path"):
         _exec("ALTER TABLE characters ADD COLUMN photo_path TEXT")
+    if not _has_col("characters", "prompt"):
+        _exec("ALTER TABLE characters ADD COLUMN prompt TEXT")
+    # migrate old prompt columns if present
+    if _has_col("characters", "short_prompt") or _has_col("characters", "mid_prompt") or _has_col(
+        "characters", "long_prompt"
+    ):
+        _exec(
+            """
+            UPDATE characters
+               SET prompt = TRIM(COALESCE(short_prompt,'') || '\n' || COALESCE(mid_prompt,'') || '\n' || COALESCE(long_prompt,''))
+              WHERE prompt IS NULL OR prompt=''
+            """
+        )
+        for col in ("short_prompt", "mid_prompt", "long_prompt"):
+            if _has_col("characters", col):
+                try:
+                    _exec(f"ALTER TABLE characters DROP COLUMN {col}")
+                except sqlite3.OperationalError:
+                    pass
 
     # chats
     _exec(
@@ -484,24 +501,20 @@ def list_characters_for_user(
     return [dict(r) for r in rows]
 
 
-def set_character_prompts(
+def set_character_prompt(
     char_id: int,
     *,
-    short: str | None = None,
-    mid: str | None = None,
-    long: str | None = None,
+    prompt: str | None = None,
     keywords: str | None = None,
 ) -> None:
     row = get_character(char_id)
     if not row:
         return
-    short = short if short is not None else row.get("short_prompt")
-    mid = mid if mid is not None else row.get("mid_prompt")
-    long = long if long is not None else row.get("long_prompt")
+    prompt = prompt if prompt is not None else row.get("prompt")
     keywords = keywords if keywords is not None else row.get("keywords")
     _exec(
-        "UPDATE characters SET short_prompt=?, mid_prompt=?, long_prompt=?, keywords=? WHERE id=?",
-        (short, mid, long, keywords, row["id"]),
+        "UPDATE characters SET prompt=?, keywords=? WHERE id=?",
+        (prompt, keywords, row["id"]),
     )
 
 
