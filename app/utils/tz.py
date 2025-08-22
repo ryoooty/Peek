@@ -4,31 +4,35 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 
 def parse_tz_offset(value: str | None) -> int | None:
-    """Parse timezone offset string or callback payload into minutes.
+    """Parse timezone offset.
 
-    Accepts manual inputs like ``+3`` or ``-03:30`` and callback payloads like
-    ``tz:180``. Returns offset in minutes or ``None`` if input is invalid.
-
+    Handles both manual text input (``+3``, ``-03:30``) and callback payloads
+    like ``"tz:180"``. For manual input returns ``None`` if the value is
+    invalid. For callback payloads raises :class:`ValueError` when parsing
+    fails.
     """
-    if data is None:
+
+    if value is None:
+
         return None
     text = data.strip()
     if not text:
         return None
 
-    if text.lower().startswith("tz:"):
+    if ":" in text and text.split(":", 1)[0].isalpha():
         try:
             return int(text.split(":", 1)[1])
-        except Exception:
-            return None
+        except Exception as exc:  # pragma: no cover
+            raise ValueError("Invalid timezone offset") from exc
+
+    m = re.fullmatch(r"([+-])?\s*(\d{1,2})(?:[:\s]*(\d{2}))?", text)
+    if not m:
+        return None
+
 
     m = re.fullmatch(r"([+-])?\s*(\d{1,2})(?:[:\s]*(\d{2}))?", text)
 
-    if not m:
-        return None
-    sign, hours_s, minutes_s = m.groups()
-    hours = int(hours_s)
-    minutes = int(minutes_s) if minutes_s else 0
+
     if hours > 12 or minutes not in (0, 30):
         return None
     total = hours * 60 + minutes

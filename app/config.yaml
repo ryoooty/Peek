@@ -19,21 +19,14 @@ toki_spend_coeff: 1.0
 
 pay_options:
   - tokens: 100
-    price_rub: 64
   - tokens: 250
-    price_rub: 119
   - emoji: "💖"
     tokens: 500
-    price_rub: 189
   - tokens: 1000
-    price_rub: 309
   - emoji: "💖"
     tokens: 2000
-    price_rub: 559
   - tokens: 5000
-    price_rub: 1049
   - tokens: 10000
-    price_rub: 1899
 
 pay_requisites: ""
 

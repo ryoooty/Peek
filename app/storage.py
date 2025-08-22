@@ -300,6 +300,7 @@ def _migrate() -> None:
         user_id     INTEGER NOT NULL,
         provider    TEXT,           -- 'boosty'|'donationalerts'|'manual'
         amount      REAL NOT NULL,
+        tokens      INTEGER,
         status      TEXT DEFAULT 'pending', -- 'pending'|'approved'|'declined'
         created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         approved_by INTEGER,
@@ -312,8 +313,6 @@ def _migrate() -> None:
         )
     if not _has_col("topups", "tokens"):
         _exec("ALTER TABLE topups ADD COLUMN tokens INTEGER")
-    if not _has_col("topups", "price_rub"):
-        _exec("ALTER TABLE topups ADD COLUMN price_rub REAL")
 
 
     # broadcast log
@@ -1160,8 +1159,8 @@ def log_proactive(
 def create_topup_pending(user_id: int, amount: float, provider: str) -> int:
     tokens = int(float(amount) * 1000)
     cur = _exec(
-        "INSERT INTO topups(user_id, amount, tokens, price_rub, provider, status) VALUES (?,?,?,?,?, 'pending')",
-        (user_id, float(amount), tokens, float(amount), provider),
+        "INSERT INTO topups(user_id, amount, tokens, provider, status) VALUES (?,?,?,?, 'pending')",
+        (user_id, float(amount), tokens, provider),
     )
     tid = int(cur.lastrowid)
     topups_logger.info(

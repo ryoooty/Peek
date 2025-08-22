@@ -26,7 +26,7 @@ class DummySettings:
         self.model_tariffs = {"ghost": Tariff()}
         self.limits = DummyLimits()
         self.pay_options = [
-            {"tokens": 1000, "price_rub": 1, "emoji": "💰"},
+            {"tokens": 1000, "emoji": "💰"},
         ]
         self.admin_ids = [2]
         self.boosty_secret = None
