@@ -302,6 +302,10 @@ def _migrate() -> None:
         _exec(
             "ALTER TABLE topups ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
         )
+    if not _has_col("topups", "tokens"):
+        _exec("ALTER TABLE topups ADD COLUMN tokens INTEGER")
+    if not _has_col("topups", "price_rub"):
+        _exec("ALTER TABLE topups ADD COLUMN price_rub REAL")
 
 
     # broadcast log
@@ -1172,12 +1176,12 @@ def log_proactive(
 
 # ------------- Payments -------------
 def create_topup_pending(user_id: int, amount: float, provider: str) -> int:
+    tokens = int(float(amount) * 1000)
     cur = _exec(
-        "INSERT INTO topups(user_id, amount, provider, status) VALUES (?,?,?, 'pending')",
-        (user_id, float(amount), provider),
+        "INSERT INTO topups(user_id, amount, tokens, price_rub, provider, status) VALUES (?,?,?,?,?, 'pending')",
+        (user_id, float(amount), tokens, float(amount), provider),
     )
     tid = int(cur.lastrowid)
-    tokens = int(float(amount) * 1000)
     topups_logger.info(
         "user_id=%s tid=%s status=pending amount=%.3f tokens=%d",
         user_id,
@@ -1233,7 +1237,6 @@ def create_transaction(topup_id: int, user_id: int, amount: float, provider: str
     )
     return int(cur.lastrowid)
 
-
 def approve_topup(topup_id: int, admin_id: int) -> bool:
     r = _q(
         "SELECT user_id, amount, status, provider FROM topups WHERE id=?",
@@ -1245,6 +1248,7 @@ def approve_topup(topup_id: int, admin_id: int) -> bool:
     amt = float(r["amount"] or 0)
     if amt <= 0:
         return False
+
     prov = str(r["provider"] or "")
     _exec(
         "UPDATE topups SET status='approved', approved_by=?, approved_at=CURRENT_TIMESTAMP WHERE id=?",
@@ -1253,11 +1257,13 @@ def approve_topup(topup_id: int, admin_id: int) -> bool:
     tokens = int(amt * 1000)
     add_paid_tokens(uid, tokens)  # пример: 1 у.е. = 1000 токенов
     create_transaction(topup_id, uid, amt, prov)
+
     topups_logger.info(
         "user_id=%s tid=%s status=approved amount=%.3f tokens=%d",
         uid,
         topup_id,
         amt,
+
         tokens,
     )
     return True

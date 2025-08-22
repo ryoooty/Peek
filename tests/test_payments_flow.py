@@ -43,14 +43,24 @@ class DummyBot:
         pass
 
 
+class DummyBot:
+    def __init__(self):
+        self.sent = []
+
+    async def send_message(self, *args, **kwargs):
+        self.sent.append((args, kwargs))
+
+
 class DummyMessage:
     def __init__(self, user_id: int, bot: DummyBot | None = None, text: str = "", document=None):
+
         self.from_user = SimpleNamespace(id=user_id)
         self.text = text
         self.document = document
         self.sent = []
         self.edited = []
         self.bot = bot or SimpleNamespace(send_message=lambda *args, **kwargs: None)
+
 
     async def answer(self, text: str, reply_markup=None, **kwargs):
         self.sent.append((text, reply_markup))

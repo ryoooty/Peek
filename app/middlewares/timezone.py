@@ -4,7 +4,7 @@ from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject, Message, CallbackQuery
 
 from app import storage
-from app.utils.tz import tz_keyboard
+from app.utils.tz import tz_keyboard, parse_tz_offset
 from app.utils.telegram import safe_edit_text
 
 
@@ -29,13 +29,20 @@ class TimezoneMiddleware(BaseMiddleware):
 
         u = storage.get_user(user_id) or {}
         if u.get("tz_offset_min") is None:
-            kb = tz_keyboard("tz")
-            text = "Выберите ваш часовой пояс:"
             if isinstance(event, Message):
-                await event.answer(text, reply_markup=kb)
+                offset = parse_tz_offset(event.text or "")
+                if offset is not None:
+                    storage.set_user_field(user_id, "tz_offset_min", offset)
+                    await event.answer("Часовой пояс сохранён.")
+                    return
+                kb = tz_keyboard("tz")
+                await event.answer("Выберите ваш часовой пояс:", reply_markup=kb)
+                return
             elif isinstance(event, CallbackQuery):
+                kb = tz_keyboard("tz")
+                text = "Выберите ваш часовой пояс:"
                 if event.message:
                     await safe_edit_text(event.message, text, callback=event, reply_markup=kb)
                 await event.answer()
-            return
+                return
         return await handler(event, data)
