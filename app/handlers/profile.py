@@ -162,8 +162,6 @@ async def cb_mode(call: CallbackQuery):
 async def cb_settings(call: CallbackQuery):
     u = storage.get_user(call.from_user.id) or {}
     kb = InlineKeyboardBuilder()
-    # Убрали «📏 Длина ответов» (везде Авто). Остальное — как было.
-    kb.button(text=f"🧩 Вид промтов ({u.get('default_resp_size') or 'auto'})", callback_data="set:prompts")
     s = _settings()
     kb.button(text="🗜 Автосжатие: {}".format('вкл' if s.limits.auto_compress_default else 'выкл'), callback_data="set:compress")
     kb.button(text="⚡ Настройка Чата", callback_data="set:chat")
@@ -296,18 +294,6 @@ async def cb_set_chat_max(call: CallbackQuery):
 
 # ---- Другие настройки (оставлены) ----
 
-@router.callback_query(F.data == "set:prompts")
-async def cb_set_prompts(call: CallbackQuery):
-    u = storage.get_user(call.from_user.id) or {}
-    size = (u.get("default_resp_size") or "auto")
-    order = ["small", "medium", "large", "auto"]  # в UI не показываем «длину», но вид промтов оставлен
-    try:
-        idx = order.index(size)
-    except ValueError:
-        idx = order.index("auto")
-    nxt = order[(idx + 1) % len(order)]
-    storage.set_user_field(call.from_user.id, "default_resp_size", nxt)
-    await cb_settings(call)
 
 
 @router.callback_query(F.data == "set:compress")

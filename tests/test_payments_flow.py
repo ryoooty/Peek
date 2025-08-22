@@ -4,7 +4,6 @@ import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 
-
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))
@@ -39,23 +38,27 @@ class DummySettings:
         self.support_user_id = 42
 
 
+class DummyBot:
+    async def send_message(self, *args, **kwargs):
+        pass
+
 
 class DummyMessage:
-    def __init__(self, user_id: int, text: str = ""):
+    def __init__(self, user_id: int, bot: DummyBot | None = None, text: str = "", document=None):
         self.from_user = SimpleNamespace(id=user_id)
         self.text = text
+        self.document = document
         self.sent = []
         self.edited = []
-        self.bot = SimpleNamespace(send_message=lambda *args, **kwargs: None)
+        self.bot = bot or SimpleNamespace(send_message=lambda *args, **kwargs: None)
 
-
-    async def answer(self, text: str, reply_markup=None):
+    async def answer(self, text: str, reply_markup=None, **kwargs):
         self.sent.append((text, reply_markup))
 
-    async def edit_text(self, text: str, reply_markup=None):
+    async def edit_text(self, text: str, reply_markup=None, **kwargs):
         self.edited.append((text, reply_markup))
 
-    async def edit_caption(self, caption: str, reply_markup=None):
+    async def edit_caption(self, caption: str, reply_markup=None, **kwargs):
         self.caption = caption
         self.edited.append((caption, reply_markup))
 
@@ -96,7 +99,7 @@ def _setup(monkeypatch):
 
     def create_topup_pending(user_id: int, amount: float, provider: str) -> int:
         existing = storage.query(
-            "SELECT id FROM topups WHERE user_id=? AND status='pending'", (user_id,)
+            "SELECT id FROM topups WHERE user_id=? AND status='pending'", (user_id,),
         )
         if existing:
             return int(existing[0]["id"])
@@ -150,10 +153,9 @@ def test_manual_payment_flow(tmp_path, monkeypatch):
 
     # admin approves request
     tid = storage.query(
-        "SELECT id FROM topups WHERE user_id=? AND status='pending'", (1,)
+        "SELECT id FROM topups WHERE user_id=? AND status='pending'", (1,),
     )[0]["id"]
     ok = storage.approve_topup(tid, admin_id=42)
     assert ok
     u = storage.get_user(1)
     assert u["paid_tokens"] == 1000
-
