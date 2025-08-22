@@ -68,9 +68,9 @@ async def cmd_pay(msg: Message):
     row: list[InlineKeyboardButton] = []
     for opt in settings.pay_options:
         tokens = getattr(opt, "tokens", opt.get("tokens"))
-        price = getattr(opt, "price_rub", opt.get("price_rub"))
         emoji = getattr(opt, "emoji", opt.get("emoji")) or ""
-        text = f"{emoji + ' ' if emoji else ''}{tokens} — {price} ₽"
+        price = tokens / 1000.0
+        text = f"{emoji + ' ' if emoji else ''}{tokens} — {price:.2f} ₽"
         row.append(InlineKeyboardButton(text=text, callback_data=f"buy:{tokens}"))
         if len(row) == 2:
             rows.append(row)
@@ -100,12 +100,12 @@ async def cb_buy(call: CallbackQuery):
     if not option:
         return await call.answer("Опция недоступна", show_alert=True)
 
-    price = float(getattr(option, "price_rub", option.get("price_rub")))
-    amount = tokens / 1000.0
+    price = tokens / 1000.0
+    amount = price
     tid = storage.create_topup_pending(call.from_user.id, amount, provider="manual")
     storage.approve_topup(tid, admin_id=0)
     await call.message.answer(
-        f"Счёт #{tid}: {tokens} токенов за {price} ₽\n✅ Баланс пополнен",
+        f"Счёт #{tid}: {tokens} токенов за {price:.2f} ₽\n✅ Баланс пополнен",
     )
     await call.answer()
 
@@ -178,12 +178,11 @@ async def cmd_decline(msg: Message):
 def _format_topup(r) -> str:
     amount = float(r["amount"])
     tokens = int(amount * 1000)
-    price = amount
     return (
         f"Заявка #{r['id']}\n"
         f"user_id: {r['user_id']}\n"
         f"tokens: {tokens}\n"
-        f"price_rub: {price:.2f}\n"
+        f"amount: {amount:.2f}\n"
         f"status: {r['status']}"
     )
 

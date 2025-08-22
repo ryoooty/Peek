@@ -1,30 +1,36 @@
+import importlib
 import sys
 import types
 from types import SimpleNamespace
-
-# stub storage and tz to avoid heavy dependencies
-storage_stub = types.ModuleType("app.storage")
-storage_stub.get_user = lambda user_id: {}
-stored = {}
-
-def _set(user_id, field, value):
-    stored["user_id"] = user_id
-    stored["field"] = field
-    stored["value"] = value
-
-storage_stub.set_user_field = _set
-sys.modules["app.storage"] = storage_stub
-
-tz_stub = types.ModuleType("app.utils.tz")
-tz_stub.tz_keyboard = lambda *_, **__: "KB"
-tz_stub.parse_tz_offset = lambda s: 180 if s.strip().replace(" ", "") in {"+3", "+03", "+03:00"} else None
-sys.modules["app.utils.tz"] = tz_stub
-
-from app.middlewares.timezone import TimezoneMiddleware
 import asyncio
 
 
-def test_timezone_prompt():
+def _setup(monkeypatch, stored):
+    import app.storage as storage
+
+    def _set(user_id, field, value):
+        stored["user_id"] = user_id
+        stored["field"] = field
+        stored["value"] = value
+
+    monkeypatch.setattr(storage, "get_user", lambda uid: {})
+    monkeypatch.setattr(storage, "set_user_field", _set)
+
+    tz_stub = types.ModuleType("app.utils.tz")
+    tz_stub.tz_keyboard = lambda *_, **__: "KB"
+    tz_stub.parse_tz_offset = (
+        lambda s: 180 if s.strip().replace(" ", "") in {"+3", "+03", "+03:00"} else None
+    )
+    monkeypatch.setitem(sys.modules, "app.utils.tz", tz_stub)
+
+    monkeypatch.delitem(sys.modules, "app.middlewares.timezone", raising=False)
+    return importlib.import_module("app.middlewares.timezone").TimezoneMiddleware
+
+
+def test_timezone_prompt(monkeypatch):
+    stored = {}
+    TimezoneMiddleware = _setup(monkeypatch, stored)
+
     prompts = {}
 
     from aiogram.types import Message as AiogramMessage
@@ -57,7 +63,10 @@ def test_timezone_prompt():
     assert not called
 
 
-def test_timezone_manual_input():
+def test_timezone_manual_input(monkeypatch):
+    stored = {}
+    TimezoneMiddleware = _setup(monkeypatch, stored)
+
     prompts = {}
 
     from aiogram.types import Message as AiogramMessage
@@ -85,5 +94,6 @@ def test_timezone_manual_input():
     asyncio.run(run())
 
     assert prompts["text"] == "Часовой пояс сохранён."
-    assert stored["value"] == 180
+    assert stored.get("value") == 180
     assert not called
+

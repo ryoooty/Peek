@@ -14,8 +14,8 @@
 
 ```
 pay_options = [
-    {"tokens": 1000, "price_rub": 150, "emoji": "💰"},
-    {"tokens": 5000, "price_rub": 600, "emoji": "💎"},
+    {"tokens": 1000, "emoji": "💰"},
+    {"tokens": 5000, "emoji": "💎"},
 ]
 ```
 

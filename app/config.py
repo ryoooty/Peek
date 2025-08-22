@@ -77,7 +77,6 @@ class LimitsConfig(BaseModel):
 
 class PayOption(BaseModel):
     tokens: int
-    price_rub: int
     emoji: str | None = None
 
 
