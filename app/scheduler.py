@@ -1,6 +1,7 @@
 # app/scheduler.py
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import logging
 import random
@@ -47,6 +48,8 @@ _bot: Optional[Bot] = None
 
 # Для контроля: хранить ID поставленных джобов (чтобы знать, есть ли план у юзера)
 _user_jobs: Dict[int, List[str]] = {}  # user_id -> [job_id,...]
+# asyncio fallback handlers for silence checks when APScheduler is missing
+_asyncio_silence_handles: Dict[int, asyncio.TimerHandle] = {}
 
 
 # ---------------- Public API ----------------
@@ -60,7 +63,9 @@ def init(bot: Bot) -> None:
     global _scheduler, _bot
     _bot = bot
     if AsyncIOScheduler is None:
-        # APScheduler не установлен — тихо деградируем
+        logger.warning(
+            "APScheduler is not installed; using asyncio timers only for silence checks"
+        )
         return
 
     _scheduler = AsyncIOScheduler(timezone=dt.timezone.utc)
@@ -82,6 +87,12 @@ def shutdown() -> None:
             _scheduler.shutdown(wait=False)
         except Exception:
             logger.exception("Scheduler shutdown failed")
+    for h in _asyncio_silence_handles.values():
+        try:
+            h.cancel()
+        except Exception:
+            logger.exception("Failed to cancel asyncio silence handle")
+    _asyncio_silence_handles.clear()
 
 
 def schedule_silence_check(user_id: int, chat_id: int, delay_sec: int = 600) -> None:
@@ -89,6 +100,28 @@ def schedule_silence_check(user_id: int, chat_id: int, delay_sec: int = 600) -> 
     Вызывается из чата: поставить «проверку тишины» через delay_sec (дефолт 10 минут).
     """
     if not _scheduler:
+        logger.warning(
+            "Scheduler is not initialized; using asyncio fallback for silence check"
+        )
+        # asyncio-based fallback: replace previous timer and schedule new one
+        handle = _asyncio_silence_handles.pop(user_id, None)
+        if handle:
+            try:
+                handle.cancel()
+            except Exception:
+                logger.exception(
+                    "Failed to cancel previous silence timer for %s", user_id
+                )
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.get_event_loop()
+
+        def _cb() -> None:
+            _asyncio_silence_handles.pop(user_id, None)
+            asyncio.create_task(_on_silence(user_id, chat_id))
+
+        _asyncio_silence_handles[user_id] = loop.call_later(int(delay_sec), _cb)
         return
 
     # удалить предыдущие джобы тишины этого пользователя
