@@ -121,6 +121,7 @@ def _migrate() -> None:
         default_chat_mode   TEXT DEFAULT 'rp',
         default_model       TEXT,
 
+
         -- Chat
         proactive_enabled    INTEGER DEFAULT 1,
         pro_per_day          INTEGER DEFAULT 2,      -- дефолт: 2 раза/сутки
@@ -140,6 +141,11 @@ def _migrate() -> None:
         _exec("ALTER TABLE users ADD COLUMN last_bonus_date TEXT")
     if not _has_col("users", "last_daily_bonus_at"):
         _exec("ALTER TABLE users ADD COLUMN last_daily_bonus_at DATETIME")
+    if _has_col("users", "default_resp_size"):
+        try:
+            _exec("ALTER TABLE users DROP COLUMN default_resp_size")
+        except sqlite3.OperationalError:
+            pass
 
 
     # characters
@@ -151,9 +157,7 @@ def _migrate() -> None:
         slug         TEXT UNIQUE,
         name         TEXT NOT NULL,
         fandom       TEXT,
-        short_prompt TEXT,
-        mid_prompt   TEXT,
-        long_prompt  TEXT,
+        prompt       TEXT,
         keywords     TEXT,
         photo_id     TEXT,
         info_short   TEXT,   -- краткая инфа для карточки
@@ -169,6 +173,25 @@ def _migrate() -> None:
     # +++
     if not _has_col("characters", "photo_path"):
         _exec("ALTER TABLE characters ADD COLUMN photo_path TEXT")
+    if not _has_col("characters", "prompt"):
+        _exec("ALTER TABLE characters ADD COLUMN prompt TEXT")
+    # migrate old prompt columns if present
+    if _has_col("characters", "short_prompt") or _has_col("characters", "mid_prompt") or _has_col(
+        "characters", "long_prompt"
+    ):
+        _exec(
+            """
+            UPDATE characters
+               SET prompt = TRIM(COALESCE(short_prompt,'') || '\n' || COALESCE(mid_prompt,'') || '\n' || COALESCE(long_prompt,''))
+              WHERE prompt IS NULL OR prompt=''
+            """
+        )
+        for col in ("short_prompt", "mid_prompt", "long_prompt"):
+            if _has_col("characters", col):
+                try:
+                    _exec(f"ALTER TABLE characters DROP COLUMN {col}")
+                except sqlite3.OperationalError:
+                    pass
 
     # chats
     _exec(
@@ -380,6 +403,7 @@ def set_user_field(user_id: int, field: str, value: Any) -> None:
         "default_model",
         "proactive_enabled",
         "pro_per_day",
+
         "pro_window_local",
         "pro_window_utc",
         "pro_min_gap_min",
@@ -484,24 +508,20 @@ def list_characters_for_user(
     return [dict(r) for r in rows]
 
 
-def set_character_prompts(
+def set_character_prompt(
     char_id: int,
     *,
-    short: str | None = None,
-    mid: str | None = None,
-    long: str | None = None,
+    prompt: str | None = None,
     keywords: str | None = None,
 ) -> None:
     row = get_character(char_id)
     if not row:
         return
-    short = short if short is not None else row.get("short_prompt")
-    mid = mid if mid is not None else row.get("mid_prompt")
-    long = long if long is not None else row.get("long_prompt")
+    prompt = prompt if prompt is not None else row.get("prompt")
     keywords = keywords if keywords is not None else row.get("keywords")
     _exec(
-        "UPDATE characters SET short_prompt=?, mid_prompt=?, long_prompt=?, keywords=? WHERE id=?",
-        (short, mid, long, keywords, row["id"]),
+        "UPDATE characters SET prompt=?, keywords=? WHERE id=?",
+        (prompt, keywords, row["id"]),
     )
 
 
@@ -559,9 +579,12 @@ def create_chat(
     char_id: int,
     *,
     mode: Optional[str] = None,
+    resp_size: Optional[str] = None,
 ) -> int:
     u = get_user(user_id) or {}
     mode = mode or u.get("default_chat_mode") or "rp"
+    resp_size = resp_size or "auto"
+
     r = _q(
         "SELECT COUNT(*) AS c FROM chats WHERE user_id=? AND char_id=?",
         (user_id, char_id),
@@ -1235,6 +1258,7 @@ def create_transaction(topup_id: int, user_id: int, amount: float, provider: str
     )
     return int(cur.lastrowid)
 
+
 def approve_topup(topup_id: int, admin_id: int) -> bool:
     r = _q(
         "SELECT user_id, amount, status, provider FROM topups WHERE id=?",
@@ -1246,7 +1270,6 @@ def approve_topup(topup_id: int, admin_id: int) -> bool:
     amt = float(r["amount"] or 0)
     if amt <= 0:
         return False
-
     prov = str(r["provider"] or "")
     _exec(
         "UPDATE topups SET status='approved', approved_by=?, approved_at=CURRENT_TIMESTAMP WHERE id=?",
@@ -1255,16 +1278,15 @@ def approve_topup(topup_id: int, admin_id: int) -> bool:
     tokens = int(amt * 1000)
     add_paid_tokens(uid, tokens)  # пример: 1 у.е. = 1000 токенов
     create_transaction(topup_id, uid, amt, prov)
-
     topups_logger.info(
         "user_id=%s tid=%s status=approved amount=%.3f tokens=%d",
         uid,
         topup_id,
         amt,
-
         tokens,
     )
     return True
+
 
 
 

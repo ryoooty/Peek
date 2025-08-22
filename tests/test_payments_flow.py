@@ -39,16 +39,9 @@ class DummySettings:
 
 
 class DummyBot:
-    async def send_message(self, *args, **kwargs):
-        pass
+    pass
 
 
-class DummyBot:
-    def __init__(self):
-        self.sent = []
-
-    async def send_message(self, *args, **kwargs):
-        self.sent.append((args, kwargs))
 
 
 class DummyMessage:
@@ -59,7 +52,9 @@ class DummyMessage:
         self.document = document
         self.sent = []
         self.edited = []
-        self.bot = bot or SimpleNamespace(send_message=lambda *args, **kwargs: None)
+        self.bot = SimpleNamespace(send_message=lambda *args, **kwargs: None)
+        self.document = None
+
 
 
     async def answer(self, text: str, reply_markup=None, **kwargs):
@@ -121,6 +116,7 @@ def _setup(monkeypatch):
     payments = importlib.import_module("app.handlers.payments")
 
     async def dummy_safe_edit_text(message, text, **kwargs):
+        kwargs.pop("callback", None)
         await message.edit_text(text, **kwargs)
 
     monkeypatch.setattr(profile, "safe_edit_text", dummy_safe_edit_text)
