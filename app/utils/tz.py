@@ -3,25 +3,27 @@ import re
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 
-def parse_tz_offset(data: str | None) -> int | None:
-    """Parse timezone offset from user text or callback payload.
+def parse_tz_offset(value: str | None) -> int | None:
+    """Parse timezone offset string or callback payload into minutes.
 
-    Supports human-friendly formats like ``+3``, ``-03`` or ``4:30`` as well as
-    callback payloads in the form ``"tz:180"``. Returns offset in minutes or
-    ``None`` if the value cannot be parsed. For callback payloads an invalid
-    integer after the colon raises ``ValueError``.
+    Accepts manual inputs like ``+3`` or ``-03:30`` and callback payloads like
+    ``tz:180``. Returns offset in minutes or ``None`` if input is invalid.
+
     """
     if data is None:
         return None
     text = data.strip()
     if not text:
         return None
-    if re.match(r"^[A-Za-z]+:", text):
+
+    if text.lower().startswith("tz:"):
         try:
             return int(text.split(":", 1)[1])
-        except Exception as exc:  # pragma: no cover - clarity over micro-coverage
-            raise ValueError("Invalid timezone offset") from exc
-    m = re.fullmatch(r"([+-])?\s*(\d{1,2})(?::(\d{2}))?", text)
+        except Exception:
+            return None
+
+    m = re.fullmatch(r"([+-])?\s*(\d{1,2})(?:[:\s]*(\d{2}))?", text)
+
     if not m:
         return None
     sign, hours_s, minutes_s = m.groups()
@@ -52,3 +54,4 @@ def tz_keyboard(prefix: str = "tz") -> InlineKeyboardMarkup:
         keyboard.append(row)
     keyboard.append([InlineKeyboardButton(text="Пропустить", callback_data=f"{prefix}:skip")])
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
