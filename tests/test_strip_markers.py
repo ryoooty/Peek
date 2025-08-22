@@ -46,7 +46,7 @@ def test_chatting_text_strips_markers_rp(monkeypatch):
         captured["text"] = text
         class R:
             text = "ok"
-            usage_in = usage_out = cost_total = 0
+            usage_in = usage_out = 0
             deficit = 0
         return R()
 
@@ -69,7 +69,7 @@ def test_chatting_text_strips_markers_chat(monkeypatch):
 
     async def fake_chat_stream(user_id, chat_id, text):
         captured["text"] = text
-        yield {"kind": "final", "usage_in": "0", "usage_out": "0", "cost_total": "0", "deficit": "0"}
+        yield {"kind": "final", "usage_in": "0", "usage_out": "0", "deficit": "0"}
 
     monkeypatch.setattr(chats_module, "chat_stream", fake_chat_stream)
 

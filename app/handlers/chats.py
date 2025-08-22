@@ -487,14 +487,12 @@ async def chatting_text(msg: Message):
                         full += (("\n" if full else "") + piece)
                     usage_in = int(ev.get("usage_in") or 0)
                     usage_out = int(ev.get("usage_out") or 0)
-                    cost_total = float(ev.get("cost_total") or 0)
                     _storage().add_message(
                         chat_id,
                         is_user=False,
                         content=full,
                         usage_in=usage_in,
                         usage_out=usage_out,
-                        usage_cost_rub=cost_total,
                     )
                     if FEATURE_USAGE_MSG:
                         await msg.answer(
@@ -517,7 +515,6 @@ async def chatting_text(msg: Message):
                 content=r.text,
                 usage_in=r.usage_in,
                 usage_out=r.usage_out,
-                usage_cost_rub=r.cost_total,
             )
             await msg.answer(r.text)
             if FEATURE_USAGE_MSG:
