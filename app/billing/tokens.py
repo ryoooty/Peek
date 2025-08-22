@@ -30,9 +30,9 @@ def usage_to_toki(
     Returns
     -------
     int
-        Billable ``toki`` units.  At least ``1`` unit is always billed for any
-        non-zero usage.  If no tariff is configured for the model, the function
-        falls back to simply summing the provided token counts.
+        Billable ``toki`` units.  Any non-zero usage is rounded up and billed
+        for at least ``1`` unit.  If no tariff is configured for the model, the
+        function falls back to simply summing the provided token counts.
     """
 
     tariff = settings.model_tariffs.get(model) or settings.model_tariffs.get(
@@ -46,4 +46,6 @@ def usage_to_toki(
         + out_tokens * tariff.output_per_1k
         + cache_tokens * tariff.cache_per_1k
     ) / 1000.0
+    if units <= 0:
+        return 0
     return max(1, int(math.ceil(units)))
