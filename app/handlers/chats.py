@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import logging
 import os
+import re
 from typing import TYPE_CHECKING
 
 try:  # pragma: no cover - allow running tests without aiogram installed
@@ -459,7 +460,7 @@ async def chatting_text(msg: Message):
         return
     chat_id = int(last["id"])
     _storage().touch_activity(msg.from_user.id)
-    user_text = msg.text.replace("/s/", "").replace("/n/", "")
+    user_text = re.sub(r"(?<!\w)/(?:s|n)/|/(?:s|n)/(?!\w)", "", msg.text)
     _storage().add_message(chat_id, is_user=True, content=user_text)
     _storage().set_user_chatting(msg.from_user.id, True)  # <-- флаг «диалог начался»
     # Индикатор «печатает…»

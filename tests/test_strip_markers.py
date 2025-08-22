@@ -79,3 +79,51 @@ def test_chatting_text_strips_markers_chat(monkeypatch):
     assert captured["text"] == "Hello"
     assert "/s/" not in captured["text"]
     assert "/n/" not in captured["text"]
+
+
+def test_chatting_text_preserves_embedded_markers_rp(monkeypatch):
+    monkeypatch.setattr(chats_module, "_typing_loop", dummy_typing_loop)
+    monkeypatch.setattr(chats_module, "storage", _make_storage("rp"))
+    monkeypatch.setattr(chats_module, "schedule_silence_check", lambda *a, **k: None)
+
+    captured = {}
+
+    async def fake_chat_turn(user_id, chat_id, text):
+        captured["text"] = text
+        class R:
+            text = "ok"
+            usage_in = usage_out = 0
+            deficit = 0
+        return R()
+
+    monkeypatch.setattr(chats_module, "chat_turn", fake_chat_turn)
+
+    msg_text = "pass/s/word ban/n/ana"
+    msg = DummyMessage(msg_text)
+    asyncio.run(chats_module.chatting_text(msg))
+
+    assert captured["text"] == msg_text
+    assert "/s/" in captured["text"]
+    assert "/n/" in captured["text"]
+
+
+def test_chatting_text_preserves_embedded_markers_chat(monkeypatch):
+    monkeypatch.setattr(chats_module, "_typing_loop", dummy_typing_loop)
+    monkeypatch.setattr(chats_module, "storage", _make_storage("chat"))
+    monkeypatch.setattr(chats_module, "schedule_silence_check", lambda *a, **k: None)
+
+    captured = {}
+
+    async def fake_chat_stream(user_id, chat_id, text):
+        captured["text"] = text
+        yield {"kind": "final", "usage_in": "0", "usage_out": "0", "deficit": "0"}
+
+    monkeypatch.setattr(chats_module, "chat_stream", fake_chat_stream)
+
+    msg_text = "pass/s/word ban/n/ana"
+    msg = DummyMessage(msg_text)
+    asyncio.run(chats_module.chatting_text(msg))
+
+    assert captured["text"] == msg_text
+    assert "/s/" in captured["text"]
+    assert "/n/" in captured["text"]
