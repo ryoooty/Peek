@@ -121,6 +121,7 @@ def _migrate() -> None:
         default_chat_mode   TEXT DEFAULT 'rp',
         default_model       TEXT,
 
+
         -- Chat
         proactive_enabled    INTEGER DEFAULT 1,
         pro_per_day          INTEGER DEFAULT 2,      -- дефолт: 2 раза/сутки
@@ -183,7 +184,6 @@ def _migrate() -> None:
         user_id       INTEGER NOT NULL,
         char_id       INTEGER NOT NULL,
         mode          TEXT DEFAULT 'rp',
-        resp_size     TEXT DEFAULT 'auto',
         min_delay_ms  INTEGER DEFAULT 0,
         seq_no        INTEGER,
         is_favorite   INTEGER DEFAULT 0,
@@ -308,6 +308,10 @@ def _migrate() -> None:
         _exec(
             "ALTER TABLE topups ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
         )
+    if not _has_col("topups", "tokens"):
+        _exec("ALTER TABLE topups ADD COLUMN tokens INTEGER")
+    if not _has_col("topups", "price_rub"):
+        _exec("ALTER TABLE topups ADD COLUMN price_rub REAL")
 
 
     # broadcast log
@@ -383,6 +387,7 @@ def set_user_field(user_id: int, field: str, value: Any) -> None:
         "default_model",
         "proactive_enabled",
         "pro_per_day",
+
         "pro_window_local",
         "pro_window_utc",
         "pro_min_gap_min",
@@ -567,15 +572,16 @@ def create_chat(
     u = get_user(user_id) or {}
     mode = mode or u.get("default_chat_mode") or "rp"
     resp_size = resp_size or "auto"
+
     r = _q(
         "SELECT COUNT(*) AS c FROM chats WHERE user_id=? AND char_id=?",
         (user_id, char_id),
     ).fetchone()
     seq_no = int((r["c"] or 0) + 1)
-    params = (user_id, char_id, mode, resp_size, seq_no)
-    assert len(params) == 5
+    params = (user_id, char_id, mode, seq_no)
+    assert len(params) == 4
     cur = _exec(
-        "INSERT INTO chats(user_id,char_id,mode,resp_size,seq_no) VALUES (?,?,?,?,?)",
+        "INSERT INTO chats(user_id,char_id,mode,seq_no) VALUES (?,?,?,?)",
         params,
     )
     return int(cur.lastrowid)
@@ -1180,12 +1186,12 @@ def log_proactive(
 
 # ------------- Payments -------------
 def create_topup_pending(user_id: int, amount: float, provider: str) -> int:
+    tokens = int(float(amount) * 1000)
     cur = _exec(
-        "INSERT INTO topups(user_id, amount, provider, status) VALUES (?,?,?, 'pending')",
-        (user_id, float(amount), provider),
+        "INSERT INTO topups(user_id, amount, tokens, price_rub, provider, status) VALUES (?,?,?,?,?, 'pending')",
+        (user_id, float(amount), tokens, float(amount), provider),
     )
     tid = int(cur.lastrowid)
-    tokens = int(float(amount) * 1000)
     topups_logger.info(
         "user_id=%s tid=%s status=pending amount=%.3f tokens=%d",
         user_id,
@@ -1269,6 +1275,7 @@ def approve_topup(topup_id: int, admin_id: int) -> bool:
         tokens,
     )
     return True
+
 
 
 

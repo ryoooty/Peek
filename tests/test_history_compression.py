@@ -48,12 +48,7 @@ def test_history_size_bounded(tmp_path, monkeypatch):
     char_id = int(
         storage._exec("INSERT INTO characters(name) VALUES (?)", ("Char",)).lastrowid
     )
-    chat_id = int(
-        storage._exec(
-            "INSERT INTO chats(user_id,char_id,mode,resp_size,seq_no) VALUES (?,?,?,?,?)",
-            (1, char_id, "rp", "auto", 1),
-        ).lastrowid
-    )
+    chat_id = storage.create_chat(1, char_id)
 
     async def fake_summary(chat_id, model, sentences=4):
         return chats.ChatReply(text="summary", usage_in=0, usage_out=0)

@@ -16,7 +16,7 @@ def _settings():
 from app.scheduler import rebuild_user_jobs
 from app.handlers.balance import _balance_text
 from app.handlers.payments import cmd_pay
-from app.utils.tz import tz_keyboard
+from app.utils.tz import tz_keyboard, parse_tz_offset
 from app.utils.telegram import safe_edit_text
 
 
@@ -168,6 +168,7 @@ async def cb_settings(call: CallbackQuery):
     kb.button(text="🌍 Часовой пояс", callback_data="set:tz")
     kb.button(text="⬅ Назад", callback_data="prof:back")
     kb.adjust(1)
+
     await safe_edit_text(call.message, "Настройки:", callback=call, reply_markup=kb.as_markup())
     await call.answer()
 
@@ -246,7 +247,8 @@ async def cb_set_chat_win(call: CallbackQuery):
         nxt = presets[0]
     storage.set_user_field(call.from_user.id, "pro_window_local", nxt)
     # проставим совместимое UTC‑поле, если используется где‑то ещё
-    tz = int((u.get("tz_offset_min") or 180))
+    tz_val = u.get("tz_offset_min")
+    tz = int(tz_val if tz_val is not None else 180)
     def _to_utc(w: str) -> str:
         a, b = w.split("-")
         def parse(s: str) -> int:
@@ -296,6 +298,7 @@ async def cb_set_chat_max(call: CallbackQuery):
 
 @router.callback_query(F.data == "set:compress")
 async def cb_set_compress(call: CallbackQuery):
+
     s = _settings()
     s.limits.auto_compress_default = not s.limits.auto_compress_default
     await cb_settings(call)
@@ -314,18 +317,32 @@ async def cb_set_tz(call: CallbackQuery):
 
 @router.callback_query(F.data.startswith("tzprof:"))
 async def cb_tz_prof(call: CallbackQuery):
-    try:
-        # offset is provided in minutes
-        offset_min = int(call.data.split(":", 1)[1])
-    except Exception:
-        await call.answer("Некорректное значение", show_alert=True)
-        return
+    data = call.data or ""
+    if data.endswith(":skip"):
+        offset_min = 0  # default to UTC
+        msg = "Часовой пояс не задан. Используется UTC."
+    else:
+        try:
+            offset_min = parse_tz_offset(data)
+        except ValueError:
+            await call.answer("Некорректное значение", show_alert=True)
+            return
+        msg = "Часовой пояс обновлён"
     storage.set_user_field(call.from_user.id, "tz_offset_min", offset_min)
     u = storage.get_user(call.from_user.id) or {}
     await safe_edit_text(call.message, _profile_text(u), callback=call, reply_markup=_profile_kb(u))
-    await call.answer("Часовой пояс обновлён")
+    await call.answer(msg)
 
 
 @router.message(Command("tz"))
 async def cmd_tz(msg: Message):
     await msg.answer("Выберите часовой пояс:", reply_markup=tz_keyboard(prefix="tzprof"))
+
+
+@router.message(lambda msg: parse_tz_offset(getattr(msg, "text", "")) is not None)
+async def manual_tz_input(msg: Message):
+    offset = parse_tz_offset(msg.text or "")
+    if offset is None:
+        return
+    storage.set_user_field(msg.from_user.id, "tz_offset_min", offset)
+    await msg.answer("Часовой пояс обновлён.")

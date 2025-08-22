@@ -16,6 +16,9 @@ from app.providers.deepseek_openai import (
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_TOKENS_LIMIT = 700
+DEFAULT_CHAR_LIMIT = 900
+
 @dataclass
 class ChatReply:
     text: str
@@ -81,16 +84,6 @@ async def _collect_context(
             role = "user" if m["is_user"] else "assistant"
             res.append(dict(role=role, content=m["content"]))
     return res
-
-
-def _size_caps(resp_size: str) -> tuple[int, int]:
-    if resp_size == "small":
-        return (220, 300)
-    if resp_size == "medium":
-        return (380, 600)
-    if resp_size == "large":
-        return (650, 900)
-    return (700, 900)
 
 
 def _safe_trim(text: str, char_limit: int) -> str:
@@ -186,6 +179,7 @@ async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
     toks_limit, char_limit = _size_caps(str(resp_size))
     model = (user.get("default_model") or settings.default_model)
 
+
     await _maybe_compress_history(user_id, chat_id, model)
 
     cache_before = storage.get_cache_tokens(chat_id)
@@ -234,6 +228,7 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[d
     resp_size = (ch.get("resp_size") or "auto")
     toks_limit, _ = _size_caps(str(resp_size))
     model = (user.get("default_model") or settings.default_model)
+
 
     await _maybe_compress_history(user_id, chat_id, model)
 
