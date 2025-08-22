@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from typing import AsyncGenerator
 
 from app import storage
-from app.billing.pricing import calc_usage_cost_rub
 from app.config import settings
 from app.providers.deepseek_openai import (
     chat as provider_chat,
@@ -26,10 +25,6 @@ class ChatReply:
     usage_out: int = 0
     billed: int = 0
     deficit: int = 0
-    cost_in: float = 0.0
-    cost_out: float = 0.0
-    cost_cache: float = 0.0
-    cost_total: float = 0.0
 
 
 def _approx_tokens(text: str) -> int:
@@ -200,19 +195,12 @@ async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
         user_id, chat_id, model, usage_in, usage_out, cache_before
     )
     storage.add_cache_tokens(chat_id, usage_in + usage_out)
-    cost_in, cost_out, cost_cache, cost_total = calc_usage_cost_rub(
-        model, usage_in, usage_out, cache_before
-    )
     return ChatReply(
         text=out_text,
         usage_in=usage_in,
         usage_out=usage_out,
         billed=billed,
         deficit=deficit,
-        cost_in=cost_in,
-        cost_out=cost_out,
-        cost_cache=cost_cache,
-        cost_total=cost_total,
     )
 
 
@@ -250,20 +238,12 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[d
                     user_id, chat_id, model, usage_in, usage_out, cache_before
                 )
                 storage.add_cache_tokens(chat_id, usage_in + usage_out)
-                cost_in, cost_out, cost_cache, cost_total = calc_usage_cost_rub(
-                    model, usage_in, usage_out, cache_before
-                )
-
                 yield {
                     "kind": "final",
                     "usage_in": str(usage_in),
                     "usage_out": str(usage_out),
                     "billed": str(billed),
                     "deficit": str(deficit),
-                    "cost_in": f"{cost_in}",
-                    "cost_out": f"{cost_out}",
-                    "cost_cache": f"{cost_cache}",
-                    "cost_total": f"{cost_total}",
                 }
     except Exception:
         logger.exception("live_stream failed")
@@ -275,10 +255,6 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[d
             "usage_out": "0",
             "billed": "0",
             "deficit": "0",
-            "cost_in": "0",
-            "cost_out": "0",
-            "cost_cache": "0",
-            "cost_total": "0",
         }
 
 

@@ -227,7 +227,6 @@ def _migrate() -> None:
         content     TEXT NOT NULL,
         usage_in    INTEGER,
         usage_out   INTEGER,
-        usage_cost_rub REAL,
         created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
     )"""
     )
@@ -662,7 +661,6 @@ def add_message(
     content: str,
     usage_in: int | None = None,
     usage_out: int | None = None,
-    usage_cost_rub: float | None = None,
     commit: bool = True,
 ) -> int:
 
@@ -677,8 +675,8 @@ def add_message(
     with _conn_lock:
         try:
             cur = _conn.execute(
-                "INSERT INTO messages(chat_id,is_user,content,usage_in,usage_out, usage_cost_rub) VALUES (?,?,?,?,?,?)",
-                (chat_id, 1 if is_user else 0, content, usage_in, usage_out, usage_cost_rub),
+                "INSERT INTO messages(chat_id,is_user,content,usage_in,usage_out) VALUES (?,?,?,?,?)",
+                (chat_id, 1 if is_user else 0, content, usage_in, usage_out),
             )
             msg_id = int(cur.lastrowid)
             _conn.execute(
