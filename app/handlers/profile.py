@@ -16,7 +16,7 @@ def _settings():
 from app.scheduler import rebuild_user_jobs
 from app.handlers.balance import _balance_text
 from app.handlers.payments import cmd_pay
-from app.utils.tz import tz_keyboard
+from app.utils.tz import tz_keyboard, parse_tz_offset
 from app.utils.telegram import safe_edit_text
 
 
@@ -345,3 +345,12 @@ async def cb_tz_prof(call: CallbackQuery):
 @router.message(Command("tz"))
 async def cmd_tz(msg: Message):
     await msg.answer("Выберите часовой пояс:", reply_markup=tz_keyboard(prefix="tzprof"))
+
+
+@router.message(lambda msg: parse_tz_offset(getattr(msg, "text", "")) is not None)
+async def manual_tz_input(msg: Message):
+    offset = parse_tz_offset(msg.text or "")
+    if offset is None:
+        return
+    storage.set_user_field(msg.from_user.id, "tz_offset_min", offset)
+    await msg.answer("Часовой пояс обновлён.")
