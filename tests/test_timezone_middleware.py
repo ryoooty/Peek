@@ -13,14 +13,34 @@ def _set(user_id, field, value):
     stored["value"] = value
 
 storage_stub.set_user_field = _set
+import importlib
+app_pkg = importlib.import_module("app")
+orig_storage = getattr(app_pkg, "storage", None)
+app_pkg.storage = storage_stub
 sys.modules["app.storage"] = storage_stub
 
 tz_stub = types.ModuleType("app.utils.tz")
 tz_stub.tz_keyboard = lambda *_, **__: "KB"
 tz_stub.parse_tz_offset = lambda s: 180 if s.strip().replace(" ", "") in {"+3", "+03", "+03:00"} else None
+utils_pkg = importlib.import_module("app.utils")
+orig_tz = getattr(utils_pkg, "tz", None)
+utils_pkg.tz = tz_stub
 sys.modules["app.utils.tz"] = tz_stub
 
 from app.middlewares.timezone import TimezoneMiddleware
+
+# restore modules to avoid side effects on other tests
+if orig_storage is not None:
+    app_pkg.storage = orig_storage
+else:
+    delattr(app_pkg, "storage")
+if orig_tz is not None:
+    utils_pkg.tz = orig_tz
+else:
+    delattr(utils_pkg, "tz")
+sys.modules.pop("app.storage", None)
+sys.modules.pop("app.utils.tz", None)
+
 import asyncio
 
 

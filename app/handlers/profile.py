@@ -16,7 +16,7 @@ def _settings():
 from app.scheduler import rebuild_user_jobs
 from app.handlers.balance import _balance_text
 from app.handlers.payments import cmd_pay
-from app.utils.tz import tz_keyboard, parse_tz_offset
+from app.utils.tz import tz_keyboard, parse_tz_offset, parse_tz_offset_cb
 from app.utils.telegram import safe_edit_text
 
 
@@ -323,7 +323,7 @@ async def cb_tz_prof(call: CallbackQuery):
         msg = "Часовой пояс не задан. Используется UTC."
     else:
         try:
-            offset_min = parse_tz_offset(data)
+            offset_min = parse_tz_offset_cb(data)
         except ValueError:
             await call.answer("Некорректное значение", show_alert=True)
             return

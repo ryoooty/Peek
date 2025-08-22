@@ -8,6 +8,7 @@ from typing import AsyncGenerator
 
 from app import storage
 from app.billing.pricing import calc_usage_cost_rub
+from app.billing.tokens import usage_to_toki
 from app.config import settings
 from app.providers.deepseek_openai import (
     chat as provider_chat,
@@ -93,24 +94,6 @@ def _safe_trim(text: str, char_limit: int) -> str:
     cut = t[:char_limit]
     pos = max(cut.rfind("."), cut.rfind("!"), cut.rfind("?"))
     return (cut if pos < 40 else cut[:pos + 1]).rstrip()
-
-
-def _billable_tokens(
-    model: str, usage_in: int, usage_out: int, cache_tokens: int
-) -> int:
-    t = settings.model_tariffs.get(model) or settings.model_tariffs.get(
-        settings.default_model
-    )
-    if not t:
-        return usage_in + usage_out + cache_tokens
-    units = (
-        usage_in * t.input_per_1k
-        + usage_out * t.output_per_1k
-        + cache_tokens * t.cache_per_1k
-    ) / 1000.0
-    return max(1, int(math.ceil(units)))
-
-
 def _apply_billing(
     user_id: int,
     chat_id: int,
@@ -122,7 +105,7 @@ def _apply_billing(
     """Возвращает (billed, deficit)."""
     if cache_tokens is None:
         cache_tokens = storage.get_cache_tokens(chat_id)
-    billed = _billable_tokens(model, usage_in, usage_out, cache_tokens)
+    billed = usage_to_toki(model, usage_in, usage_out, cache_tokens)
     billed = int(math.ceil(billed * settings.toki_spend_coeff))
     _spent_free, _spent_paid, deficit = storage.spend_tokens(user_id, billed)
     return billed, deficit

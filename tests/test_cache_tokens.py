@@ -1,6 +1,7 @@
 import sys
 import types
 import asyncio
+import importlib
 from pathlib import Path
 import pytest
 
@@ -161,9 +162,12 @@ def test_cache_tokens_affect_billing(tmp_path, monkeypatch):
     monkeypatch.setattr(chats, "provider_chat", fake_chat)
 
     r1 = asyncio.run(chats.chat_turn(3, chat_id, "hi"))
-    assert r1.billed == 1
+    usage_to_toki = importlib.import_module("app.billing.tokens").usage_to_toki
+    expected1 = usage_to_toki("gpt-4o-mini", 1000, 0)
+    assert r1.billed == expected1
     r2 = asyncio.run(chats.chat_turn(3, chat_id, "hi"))
-    assert r2.billed == 1  # billed solely for cached tokens
+    expected2 = usage_to_toki("gpt-4o-mini", 0, 0, cache_tokens=1000)
+    assert r2.billed == expected2  # billed solely for cached tokens
 
 
 def teardown_module():

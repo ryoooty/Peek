@@ -34,6 +34,7 @@ sys.modules["app.config"] = config_module
 
 import importlib
 sys.modules.pop("app.billing.pricing", None)
+sys.modules.pop("app.billing.tokens", None)
 
 
 
@@ -52,3 +53,20 @@ def test_calc_usage_cost_rub(model, prompt, completion, cache, expected):
     calc_usage_cost_rub = importlib.import_module("app.billing.pricing").calc_usage_cost_rub
     cost = calc_usage_cost_rub(model, prompt, completion, cache)
     assert cost == pytest.approx(expected)
+
+
+@pytest.mark.parametrize(
+    "model,prompt,completion,cache,expected",
+    [
+        ("gpt-4o-mini", 1000, 500, 0, 2),
+        ("gpt-4o", 2000, 1000, 0, 6),
+        ("deepseek-chat", 500, 500, 500, 1),
+        ("unknown-model", 1000, 1000, 0, 2),
+    ],
+)
+def test_usage_to_toki(model, prompt, completion, cache, expected):
+    sys.modules["app.config"] = config_module
+    sys.modules.pop("app.billing.tokens", None)
+    usage_to_toki = importlib.import_module("app.billing.tokens").usage_to_toki
+    billed = usage_to_toki(model, prompt, completion, cache)
+    assert billed == expected

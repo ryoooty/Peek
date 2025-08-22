@@ -14,7 +14,7 @@ from app.app_defs import APPS, COMBOS
 
 from app import storage
 from app.config import settings
-from app.utils.tz import tz_keyboard, parse_tz_offset
+from app.utils.tz import tz_keyboard, parse_tz_offset, parse_tz_offset_cb
 from app.utils.telegram import safe_edit_text
 
 router = Router(name="user")
@@ -99,7 +99,7 @@ async def cb_set_tz(call: CallbackQuery):
         await call.answer()
         return
     try:
-        offset_min = parse_tz_offset(data)
+        offset_min = parse_tz_offset_cb(data)
     except ValueError:
         await call.answer("Некорректное значение", show_alert=True)
         return

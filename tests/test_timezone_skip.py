@@ -24,7 +24,8 @@ def setup_user_module(monkeypatch):
 
     tz_module = types.SimpleNamespace(
         tz_keyboard=lambda *a, **k: "KB",
-        parse_tz_offset=lambda d: int(d.split(":", 1)[1]),
+        parse_tz_offset=lambda s: None,
+        parse_tz_offset_cb=lambda d: int(d.split(":", 1)[1]),
     )
     monkeypatch.setitem(sys.modules, "app.utils.tz", tz_module)
 
@@ -137,7 +138,8 @@ def setup_profile_module(monkeypatch):
 
     tz_module = types.SimpleNamespace(
         tz_keyboard=lambda *a, **k: "KB",
-        parse_tz_offset=lambda d: int(d.split(":", 1)[1]),
+        parse_tz_offset=lambda s: None,
+        parse_tz_offset_cb=lambda d: int(d.split(":", 1)[1]),
     )
     monkeypatch.setitem(sys.modules, "app.utils.tz", tz_module)
 

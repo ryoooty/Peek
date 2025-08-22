@@ -59,11 +59,11 @@ def tz_keyboard(prefix: str = "tz") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
-def parse_tz_offset(data: str) -> int:
+def parse_tz_offset_cb(data: str) -> int:
     """Parse timezone offset from callback data.
 
     The data is expected in the format ``prefix:minutes`` where ``minutes`` is an
-    integer number of minutes.  This helper is shared by handlers to avoid
+    integer number of minutes. This helper is shared by handlers to avoid
     duplicating the parsing logic.
 
     :param data: Callback payload (e.g. ``"tz:180"``)
