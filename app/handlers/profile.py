@@ -168,6 +168,7 @@ async def cb_settings(call: CallbackQuery):
     kb.button(text="🌍 Часовой пояс", callback_data="set:tz")
     kb.button(text="⬅ Назад", callback_data="prof:back")
     kb.adjust(1)
+
     await safe_edit_text(call.message, "Настройки:", callback=call, reply_markup=kb.as_markup())
     await call.answer()
 
@@ -295,10 +296,9 @@ async def cb_set_chat_max(call: CallbackQuery):
 
 # ---- Другие настройки (оставлены) ----
 
-
-
 @router.callback_query(F.data == "set:compress")
 async def cb_set_compress(call: CallbackQuery):
+
     s = _settings()
     s.limits.auto_compress_default = not s.limits.auto_compress_default
     await cb_settings(call)
