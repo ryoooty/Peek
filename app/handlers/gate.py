@@ -18,7 +18,7 @@ async def cb_gate_check(call: CallbackQuery):
         status = getattr(m, "status", "left")
         if status in ("member", "administrator", "creator"):
             await call.answer("Спасибо! Подписка подтверждена.")
-            await safe_edit_text(call.message, "Готово. Вы можете продолжать.")
+            await safe_edit_text(call.message, "Готово. Вы можете продолжать.", callback=call)
         else:
             await call.answer("Ещё не подписаны.", show_alert=True)
     except Exception:

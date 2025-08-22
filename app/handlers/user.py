@@ -91,7 +91,7 @@ async def cb_set_tz(call: CallbackQuery):
         await call.answer("Некорректное значение", show_alert=True)
         return
     storage.set_user_field(call.from_user.id, "tz_offset_min", offset_min)
-    await safe_edit_text(call.message, "Часовой пояс сохранён.")
+    await safe_edit_text(call.message, "Часовой пояс сохранён.", callback=call)
     await call.message.answer("Здравствуйте!", reply_markup=main_menu_kb(call.from_user.id))
     await call.answer()
 

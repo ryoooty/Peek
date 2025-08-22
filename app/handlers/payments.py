@@ -222,7 +222,7 @@ async def cb_topup_approve(call: CallbackQuery):
             "SELECT id, user_id, amount, status FROM topups WHERE id=?", (tid,)
         )
         if r:
-            await safe_edit_text(call.message, _format_topup(r[0]), reply_markup=None)
+            await safe_edit_text(call.message, _format_topup(r[0]), callback=call, reply_markup=None)
         await call.answer("✅ Подтверждено")
     else:
         await call.answer("Не удалось", show_alert=True)
@@ -242,7 +242,7 @@ async def cb_topup_decline(call: CallbackQuery):
             "SELECT id, user_id, amount, status FROM topups WHERE id=?", (tid,)
         )
         if r:
-            await safe_edit_text(call.message, _format_topup(r[0]), reply_markup=None)
+            await safe_edit_text(call.message, _format_topup(r[0]), callback=call, reply_markup=None)
         await call.answer("🚫 Отклонено")
     else:
         await call.answer("Не удалось", show_alert=True)
@@ -252,6 +252,6 @@ async def cb_topup_decline(call: CallbackQuery):
 async def cb_topup_skip(call: CallbackQuery):
     if call.from_user.id not in settings.admin_ids:
         return
-    await safe_edit_text(call.message, call.message.text or "", reply_markup=None)
+    await safe_edit_text(call.message, call.message.text or "", callback=call, reply_markup=None)
     await call.answer("Пропущено")
 

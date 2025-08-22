@@ -61,6 +61,6 @@ class SubscriptionGateMiddleware(BaseMiddleware):
             await event.answer("Подпишитесь на канал, чтобы продолжить.", reply_markup=kb)
         elif isinstance(event, CallbackQuery):
             if event.message:
-                await safe_edit_text(event.message, "Подпишитесь на канал, чтобы продолжить.", reply_markup=kb)
+                await safe_edit_text(event.message, "Подпишитесь на канал, чтобы продолжить.", callback=event, reply_markup=kb)
             await event.answer()
         return

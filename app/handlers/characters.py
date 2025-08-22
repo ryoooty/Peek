@@ -98,7 +98,7 @@ async def _edit_or_send_card(
         await m.answer_photo(photo=media, caption=caption, reply_markup=kb.as_markup())
     else:
         if isinstance(message_or_call, CallbackQuery):
-            await safe_edit_text(m, caption, reply_markup=kb.as_markup())
+            await safe_edit_text(m, caption, callback=message_or_call, reply_markup=kb.as_markup())
         else:
             await m.answer(caption, reply_markup=kb.as_markup())
 
@@ -181,7 +181,7 @@ async def show_characters_page(msg_or_call: Message | CallbackQuery, page: int):
     kb = _chars_page_kb(user_id, page)
     text = "Выберите персонажа:"
     if isinstance(msg_or_call, CallbackQuery):
-        await safe_edit_text(msg_or_call.message, text, reply_markup=kb.as_markup())
+        await safe_edit_text(msg_or_call.message, text, callback=msg_or_call, reply_markup=kb.as_markup())
         await msg_or_call.answer()
     else:
         await msg_or_call.answer(text, reply_markup=kb.as_markup())
@@ -285,7 +285,7 @@ async def cb_char_chats(call: CallbackQuery):
 
     ch = storage.get_character(char_id)
     title = _esc(ch["name"]) if ch else "персонажем"
-    await safe_edit_text(call.message, f"Чаты с {title}:", reply_markup=kb.as_markup())
+    await safe_edit_text(call.message, f"Чаты с {title}:", callback=call, reply_markup=kb.as_markup())
     await call.answer()
 
 
@@ -322,5 +322,5 @@ async def cb_char_settings(call: CallbackQuery):
     kb.button(text="⬅ Назад", callback_data=f"char:open:{char_id}")
     kb.adjust(1)
 
-    await safe_edit_text(call.message, _char_card_caption(ch), reply_markup=kb.as_markup())
+    await safe_edit_text(call.message, _char_card_caption(ch), callback=call, reply_markup=kb.as_markup())
     await call.answer()
