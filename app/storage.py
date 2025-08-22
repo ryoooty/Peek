@@ -119,7 +119,6 @@ def _migrate() -> None:
 
         tz_offset_min       INTEGER,
         default_chat_mode   TEXT DEFAULT 'rp',
-        default_resp_size   TEXT DEFAULT 'auto',
         default_model       TEXT,
 
         -- Chat
@@ -179,7 +178,6 @@ def _migrate() -> None:
         user_id       INTEGER NOT NULL,
         char_id       INTEGER NOT NULL,
         mode          TEXT DEFAULT 'rp',
-        resp_size     TEXT DEFAULT 'auto',
         min_delay_ms  INTEGER DEFAULT 0,
         seq_no        INTEGER,
         is_favorite   INTEGER DEFAULT 0,
@@ -380,7 +378,6 @@ def set_user_field(user_id: int, field: str, value: Any) -> None:
         "sub_end",
         "tz_offset_min",
         "default_chat_mode",
-        "default_resp_size",
         "default_model",
         "proactive_enabled",
         "pro_per_day",
@@ -563,20 +560,18 @@ def create_chat(
     char_id: int,
     *,
     mode: Optional[str] = None,
-    resp_size: Optional[str] = None,
 ) -> int:
     u = get_user(user_id) or {}
     mode = mode or u.get("default_chat_mode") or "rp"
-    resp_size = resp_size or u.get("default_resp_size") or "auto"
     r = _q(
         "SELECT COUNT(*) AS c FROM chats WHERE user_id=? AND char_id=?",
         (user_id, char_id),
     ).fetchone()
     seq_no = int((r["c"] or 0) + 1)
-    params = (user_id, char_id, mode, resp_size, seq_no)
-    assert len(params) == 5
+    params = (user_id, char_id, mode, seq_no)
+    assert len(params) == 4
     cur = _exec(
-        "INSERT INTO chats(user_id,char_id,mode,resp_size,seq_no) VALUES (?,?,?,?,?)",
+        "INSERT INTO chats(user_id,char_id,mode,seq_no) VALUES (?,?,?,?)",
         params,
     )
     return int(cur.lastrowid)
@@ -1242,31 +1237,33 @@ def create_transaction(topup_id: int, user_id: int, amount: float, provider: str
     )
     return int(cur.lastrowid)
 
-
 def approve_topup(topup_id: int, admin_id: int) -> bool:
     r = _q(
-        "SELECT user_id, tokens, price_rub, status, provider FROM topups WHERE id=?",
+        "SELECT user_id, amount, status, provider FROM topups WHERE id=?",
         (topup_id,),
     ).fetchone()
     if not r or r["status"] != "pending":
         return False
     uid = int(r["user_id"])
-    tokens = int(r["tokens"] or 0)
-    price = float(r["price_rub"] or 0)
-    if tokens <= 0 or price <= 0:
+    amt = float(r["amount"] or 0)
+    if amt <= 0:
         return False
+
     prov = str(r["provider"] or "")
     _exec(
         "UPDATE topups SET status='approved', approved_by=?, approved_at=CURRENT_TIMESTAMP WHERE id=?",
         (admin_id, topup_id),
     )
+    tokens = int(amt * 1000)
     add_paid_tokens(uid, tokens)  # пример: 1 у.е. = 1000 токенов
-    create_transaction(topup_id, uid, price, prov)
+    create_transaction(topup_id, uid, amt, prov)
+
     topups_logger.info(
         "user_id=%s tid=%s status=approved amount=%.3f tokens=%d",
         uid,
         topup_id,
-        price,
+        amt,
+
         tokens,
     )
     return True

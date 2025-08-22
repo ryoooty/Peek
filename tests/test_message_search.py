@@ -32,12 +32,7 @@ def test_search_messages_and_context(tmp_path: Path):
     char_id = int(
         storage._exec("INSERT INTO characters(name) VALUES (?)", ("Char",)).lastrowid
     )
-    chat_id = int(
-        storage._exec(
-            "INSERT INTO chats(user_id,char_id,mode,resp_size,seq_no) VALUES (?,?,?,?,?)",
-            (1, char_id, "rp", "auto", 1),
-        ).lastrowid
-    )
+    chat_id = storage.create_chat(1, char_id)
     storage.add_message(chat_id, is_user=True, content="I love pizza")
     storage.add_message(chat_id, is_user=False, content="What else?")
 
@@ -63,12 +58,7 @@ def test_search_messages_special_chars(tmp_path: Path):
     char_id = int(
         storage._exec("INSERT INTO characters(name) VALUES (?)", ("Char",)).lastrowid
     )
-    chat_id = int(
-        storage._exec(
-            "INSERT INTO chats(user_id,char_id,mode,resp_size,seq_no) VALUES (?,?,?,?,?)",
-            (1, char_id, "rp", "auto", 1),
-        ).lastrowid
-    )
+    chat_id = storage.create_chat(1, char_id)
     storage.add_message(chat_id, is_user=True, content="I love pizza")
 
     for q in ['"', '*']:
