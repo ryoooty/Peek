@@ -19,12 +19,8 @@ def get_system_prompt_for_chat(chat_id: int) -> str:
     mode = (ch.get("mode") or "rp").lower()
     parts = []
     if char:
-        if char.get("short_prompt"):
-            parts.append(char["short_prompt"])
-        if char.get("mid_prompt"):
-            parts.append(char["mid_prompt"])
-        if char.get("long_prompt"):
-            parts.append(char["long_prompt"])
+        if char.get("prompt"):
+            parts.append(char["prompt"])
         if char.get("keywords"):
             parts.append(f"Ключевые слова: {char['keywords']}")
     if mode == "chat":

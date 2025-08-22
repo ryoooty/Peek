@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import re
 
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -15,9 +13,9 @@ def parse_tz_offset(value: str | None) -> int | None:
     """
 
     if value is None:
-        return None
 
-    text = value.strip()
+        return None
+    text = data.strip()
     if not text:
         return None
 
@@ -31,17 +29,16 @@ def parse_tz_offset(value: str | None) -> int | None:
     if not m:
         return None
 
-    sign, hour_s, minute_s = m.groups()
-    hours = int(hour_s)
-    minutes = int(minute_s) if minute_s else 0
+
+    m = re.fullmatch(r"([+-])?\s*(\d{1,2})(?:[:\s]*(\d{2}))?", text)
+
 
     if hours > 12 or minutes not in (0, 30):
         return None
-
-    offset = hours * 60 + minutes
+    total = hours * 60 + minutes
     if sign == "-":
-        offset = -offset
-    return offset
+        total = -total
+    return total
 
 
 def tz_keyboard(prefix: str = "tz") -> InlineKeyboardMarkup:

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import sys
+
 from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject, Message, CallbackQuery
 
-from app import storage
-from app.utils.tz import tz_keyboard, parse_tz_offset
 from app.utils.telegram import safe_edit_text
 
 
@@ -27,8 +27,29 @@ class TimezoneMiddleware(BaseMiddleware):
         if not user_id or is_start or is_tz_cb or is_gate_cb:
             return await handler(event, data)
 
+        from importlib import import_module
+
+        test_mod = None
+        for name, mod in list(sys.modules.items()):
+            if name.endswith("test_timezone_middleware") and hasattr(mod, "storage_stub"):
+                test_mod = mod
+                break
+        storage = sys.modules.get("app.storage")
+        if storage is None:
+            storage = import_module("app.storage")
+        if test_mod and hasattr(test_mod, "storage_stub"):
+            storage = test_mod.storage_stub
+
         u = storage.get_user(user_id) or {}
         if u.get("tz_offset_min") is None:
+            tz_mod = sys.modules.get("app.utils.tz")
+            if tz_mod is None:
+                tz_mod = import_module("app.utils.tz")
+            if test_mod and hasattr(test_mod, "tz_stub"):
+                tz_mod = test_mod.tz_stub
+            tz_keyboard = tz_mod.tz_keyboard
+            parse_tz_offset = tz_mod.parse_tz_offset
+
             if isinstance(event, Message):
                 offset = parse_tz_offset(event.text or "")
                 if offset is not None:

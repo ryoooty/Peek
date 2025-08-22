@@ -7,12 +7,12 @@ from dataclasses import dataclass
 from typing import AsyncGenerator
 
 from app import storage
-from app.billing.pricing import calc_usage_cost_rub
 from app.config import settings
 from app.providers.deepseek_openai import (
     chat as provider_chat,
     stream_chat as provider_stream,
 )
+
 
 logger = logging.getLogger(__name__)
 
@@ -26,10 +26,6 @@ class ChatReply:
     usage_out: int = 0
     billed: int = 0
     deficit: int = 0
-    cost_in: float = 0.0
-    cost_out: float = 0.0
-    cost_cache: float = 0.0
-    cost_total: float = 0.0
 
 
 def _approx_tokens(text: str) -> int:
@@ -64,6 +60,7 @@ async def _collect_context(
     total_tokens = sum(_approx_tokens(m["content"]) for m in res)
     if threshold and total_tokens > threshold:
         summary = await summarize_chat(chat_id, model=model)
+
         storage.compress_history(
             chat_id,
             summary.text,
@@ -71,7 +68,7 @@ async def _collect_context(
             usage_out=summary.usage_out,
         )
         _apply_billing(user_id, chat_id, model, summary.usage_in, summary.usage_out)
-        storage.add_cache_tokens(chat_id, summary.usage_out - summary.usage_in)
+
         tail = res[1:][-20:]
         res = [
             dict(role="system", content=system_prompt),
@@ -95,18 +92,14 @@ def _safe_trim(text: str, char_limit: int) -> str:
     return (cut if pos < 40 else cut[:pos + 1]).rstrip()
 
 
-def _billable_tokens(
-    model: str, usage_in: int, usage_out: int, cache_tokens: int
-) -> int:
+def _billable_tokens(model: str, usage_in: int, usage_out: int) -> int:
     t = settings.model_tariffs.get(model) or settings.model_tariffs.get(
         settings.default_model
     )
     if not t:
-        return usage_in + usage_out + cache_tokens
+        return usage_in + usage_out
     units = (
-        usage_in * t.input_per_1k
-        + usage_out * t.output_per_1k
-        + cache_tokens * t.cache_per_1k
+        usage_in * t.input_per_1k + usage_out * t.output_per_1k
     ) / 1000.0
     return max(1, int(math.ceil(units)))
 
@@ -117,12 +110,9 @@ def _apply_billing(
     model: str,
     usage_in: int,
     usage_out: int,
-    cache_tokens: int | None = None,
 ) -> tuple[int, int]:
     """Возвращает (billed, deficit)."""
-    if cache_tokens is None:
-        cache_tokens = storage.get_cache_tokens(chat_id)
-    billed = _billable_tokens(model, usage_in, usage_out, cache_tokens)
+    billed = _billable_tokens(model, usage_in, usage_out)
     billed = int(math.ceil(billed * settings.toki_spend_coeff))
     _spent_free, _spent_paid, deficit = storage.spend_tokens(user_id, billed)
     return billed, deficit
@@ -169,7 +159,6 @@ async def _maybe_compress_history(user_id: int, chat_id: int, model: str) -> Non
         usage_out=summary.usage_out,
     )
     _apply_billing(user_id, chat_id, model, summary.usage_in, summary.usage_out)
-    storage.add_cache_tokens(chat_id, summary.usage_out - summary.usage_in)
 
 
 async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
@@ -178,9 +167,9 @@ async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
     toks_limit, char_limit = DEFAULT_TOKENS_LIMIT, DEFAULT_CHAR_LIMIT
     model = (user.get("default_model") or settings.default_model)
 
+
     await _maybe_compress_history(user_id, chat_id, model)
 
-    cache_before = storage.get_cache_tokens(chat_id)
     messages = await _collect_context(
         chat_id, user_id=user_id, model=model, query=text
     )
@@ -196,23 +185,17 @@ async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
 
     usage_in = int(r.usage_in or 0)
     usage_out = int(r.usage_out or 0)
-    billed, deficit = _apply_billing(
-        user_id, chat_id, model, usage_in, usage_out, cache_before
-    )
-    storage.add_cache_tokens(chat_id, usage_in + usage_out)
+    billed, deficit = _apply_billing(user_id, chat_id, model, usage_in, usage_out)
     cost_in, cost_out, cost_cache, cost_total = calc_usage_cost_rub(
-        model, usage_in, usage_out, cache_before
+        model, usage_in, usage_out
     )
+
     return ChatReply(
         text=out_text,
         usage_in=usage_in,
         usage_out=usage_out,
         billed=billed,
         deficit=deficit,
-        cost_in=cost_in,
-        cost_out=cost_out,
-        cost_cache=cost_cache,
-        cost_total=cost_total,
     )
 
 
@@ -222,13 +205,14 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[d
     Хендлер агрегирует в буфер и нарезает на сообщения.
     """
     user = storage.get_user(user_id) or {}
-    storage.get_chat(chat_id)  # ensure chat exists
-    toks_limit = DEFAULT_TOKENS_LIMIT
+    ch = storage.get_chat(chat_id) or {}
+    resp_size = (ch.get("resp_size") or "auto")
+    toks_limit, _ = _size_caps(str(resp_size))
     model = (user.get("default_model") or settings.default_model)
+
 
     await _maybe_compress_history(user_id, chat_id, model)
 
-    cache_before = storage.get_cache_tokens(chat_id)
     messages = await _collect_context(
         chat_id, user_id=user_id, model=model, query=text
     )
@@ -247,12 +231,12 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[d
                 usage_in = int(ev.get("in") or 0)
                 usage_out = int(ev.get("out") or 0)
                 billed, deficit = _apply_billing(
-                    user_id, chat_id, model, usage_in, usage_out, cache_before
+                    user_id, chat_id, model, usage_in, usage_out
                 )
-                storage.add_cache_tokens(chat_id, usage_in + usage_out)
                 cost_in, cost_out, cost_cache, cost_total = calc_usage_cost_rub(
-                    model, usage_in, usage_out, cache_before
+                    model, usage_in, usage_out
                 )
+
 
                 yield {
                     "kind": "final",
@@ -260,10 +244,6 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[d
                     "usage_out": str(usage_out),
                     "billed": str(billed),
                     "deficit": str(deficit),
-                    "cost_in": f"{cost_in}",
-                    "cost_out": f"{cost_out}",
-                    "cost_cache": f"{cost_cache}",
-                    "cost_total": f"{cost_total}",
                 }
     except Exception:
         logger.exception("live_stream failed")
@@ -275,14 +255,11 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[d
             "usage_out": "0",
             "billed": "0",
             "deficit": "0",
-            "cost_in": "0",
-            "cost_out": "0",
-            "cost_cache": "0",
-            "cost_total": "0",
         }
 
 
 async def chat_stream(user_id: int, chat_id: int, text: str):
     async for ev in live_stream(user_id, chat_id, text):
         yield ev
+
 
