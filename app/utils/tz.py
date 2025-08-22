@@ -1,6 +1,43 @@
 from __future__ import annotations
 
+import re
+
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+
+def parse_tz_offset(value: str | None) -> int | None:
+    """Parse timezone offset string into minutes.
+
+    Accepts formats like ``+3``, ``- 3``, ``-03`` or ``+03:00`` with optional
+    spaces or colon separator. Hours must be in ``0..12`` and minutes can be
+    only ``00`` or ``30``. Returns offset in minutes or ``None`` if input is
+    invalid.
+    """
+
+    if not value:
+        return None
+
+    text = value.strip()
+    if not text:
+        return None
+
+    m = re.fullmatch(r"([+-])?\s*(\d{1,2})(?:[:\s]*(\d{2}))?", text)
+    if not m:
+        return None
+
+    sign, hour_s, minute_s = m.groups()
+    hours = int(hour_s)
+    minutes = int(minute_s) if minute_s else 0
+
+    if hours > 12:
+        return None
+    if minutes not in (0, 30):
+        return None
+
+    offset = hours * 60 + minutes
+    if sign == "-":
+        offset = -offset
+    return offset
 
 
 def tz_keyboard(prefix: str = "tz") -> InlineKeyboardMarkup:
