@@ -119,7 +119,6 @@ def _migrate() -> None:
 
         tz_offset_min       INTEGER,
         default_chat_mode   TEXT DEFAULT 'rp',
-        default_resp_size   TEXT DEFAULT 'auto',
         default_model       TEXT,
 
         -- Chat
@@ -141,6 +140,11 @@ def _migrate() -> None:
         _exec("ALTER TABLE users ADD COLUMN last_bonus_date TEXT")
     if not _has_col("users", "last_daily_bonus_at"):
         _exec("ALTER TABLE users ADD COLUMN last_daily_bonus_at DATETIME")
+    if _has_col("users", "default_resp_size"):
+        try:
+            _exec("ALTER TABLE users DROP COLUMN default_resp_size")
+        except sqlite3.OperationalError:
+            pass
 
 
     # characters
@@ -376,7 +380,6 @@ def set_user_field(user_id: int, field: str, value: Any) -> None:
         "sub_end",
         "tz_offset_min",
         "default_chat_mode",
-        "default_resp_size",
         "default_model",
         "proactive_enabled",
         "pro_per_day",
@@ -563,7 +566,7 @@ def create_chat(
 ) -> int:
     u = get_user(user_id) or {}
     mode = mode or u.get("default_chat_mode") or "rp"
-    resp_size = resp_size or u.get("default_resp_size") or "auto"
+    resp_size = resp_size or "auto"
     r = _q(
         "SELECT COUNT(*) AS c FROM chats WHERE user_id=? AND char_id=?",
         (user_id, char_id),
@@ -1241,15 +1244,14 @@ def create_transaction(topup_id: int, user_id: int, amount: float, provider: str
 
 def approve_topup(topup_id: int, admin_id: int) -> bool:
     r = _q(
-        "SELECT user_id, tokens, price_rub, status, provider FROM topups WHERE id=?",
+        "SELECT user_id, amount, status, provider FROM topups WHERE id=?",
         (topup_id,),
     ).fetchone()
     if not r or r["status"] != "pending":
         return False
     uid = int(r["user_id"])
-    tokens = int(r["tokens"] or 0)
-    price = float(r["price_rub"] or 0)
-    if tokens <= 0 or price <= 0:
+    amt = float(r["amount"] or 0)
+    if amt <= 0:
         return False
     prov = str(r["provider"] or "")
     _exec(

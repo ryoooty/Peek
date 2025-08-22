@@ -182,7 +182,7 @@ async def _maybe_compress_history(user_id: int, chat_id: int, model: str) -> Non
 async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
     user = storage.get_user(user_id) or {}
     ch = storage.get_chat(chat_id) or {}
-    resp_size = (ch.get("resp_size") or user.get("default_resp_size") or "auto")
+    resp_size = (ch.get("resp_size") or "auto")
     toks_limit, char_limit = _size_caps(str(resp_size))
     model = (user.get("default_model") or settings.default_model)
 
@@ -231,7 +231,7 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[d
     """
     user = storage.get_user(user_id) or {}
     ch = storage.get_chat(chat_id) or {}
-    resp_size = (ch.get("resp_size") or user.get("default_resp_size") or "auto")
+    resp_size = (ch.get("resp_size") or "auto")
     toks_limit, _ = _size_caps(str(resp_size))
     model = (user.get("default_model") or settings.default_model)
 
