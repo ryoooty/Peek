@@ -35,7 +35,7 @@ class TimezoneMiddleware(BaseMiddleware):
                 await event.answer(text, reply_markup=kb)
             elif isinstance(event, CallbackQuery):
                 if event.message:
-                    await safe_edit_text(event.message, text, reply_markup=kb)
+                    await safe_edit_text(event.message, text, callback=event, reply_markup=kb)
                 await event.answer()
             return
         return await handler(event, data)
