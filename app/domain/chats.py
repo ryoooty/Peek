@@ -8,6 +8,7 @@ from typing import AsyncGenerator
 
 from app import storage
 from app.billing.tokens import usage_to_toki
+from app.billing.pricing import calc_usage_cost_rub
 from app.config import settings
 from app.providers.deepseek_openai import (
     chat as provider_chat,
@@ -19,6 +20,62 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_TOKENS_LIMIT = 700
 DEFAULT_CHAR_LIMIT = 900
+
+
+def _size_caps(resp_size: str) -> tuple[int, int]:
+    """Return token/char caps for a given ``resp_size`` value.
+
+    ``resp_size`` can be one of predefined aliases (e.g. ``"short"``,
+    ``"long"``) or a string with explicit numbers like ``"500:800"`` where
+    the first value denotes the token limit and the second one – character
+    limit.  Unknown or malformed values fall back to the default limits.
+    """
+
+    if not resp_size:
+        return DEFAULT_TOKENS_LIMIT, DEFAULT_CHAR_LIMIT
+
+    rs = resp_size.strip().lower()
+
+    # Predefined presets.  The exact numbers are not critical for the
+    # application logic; they merely provide a few handy shortcuts while
+    # keeping defaults as a safe fallback.
+    presets: dict[str, tuple[int, int]] = {
+        "auto": (DEFAULT_TOKENS_LIMIT, DEFAULT_CHAR_LIMIT),
+        "default": (DEFAULT_TOKENS_LIMIT, DEFAULT_CHAR_LIMIT),
+        "short": (350, 500),
+        "medium": (DEFAULT_TOKENS_LIMIT, DEFAULT_CHAR_LIMIT),
+        "long": (1000, 1500),
+        "xs": (200, 300),
+        "s": (350, 500),
+        "m": (DEFAULT_TOKENS_LIMIT, DEFAULT_CHAR_LIMIT),
+        "l": (1000, 1500),
+        "xl": (1500, 2000),
+    }
+
+    if rs in presets:
+        return presets[rs]
+
+    # Attempt to parse explicit numeric values. Supported separators: ``:``,
+    # ``/`` and ``,``.  If only a single number is provided we interpret it as
+    # the token limit and keep the character limit at default.
+    for sep in (":", "/", ",", "x", " "):
+        if sep in rs:
+            tok_s, char_s = rs.split(sep, 1)
+            try:
+                toks = int(tok_s)
+            except ValueError:
+                toks = DEFAULT_TOKENS_LIMIT
+            try:
+                chars = int(char_s)
+            except ValueError:
+                chars = DEFAULT_CHAR_LIMIT
+            return toks, chars
+
+    try:
+        toks = int(rs)
+        return toks, DEFAULT_CHAR_LIMIT
+    except ValueError:
+        return DEFAULT_TOKENS_LIMIT, DEFAULT_CHAR_LIMIT
 
 @dataclass
 class ChatReply:
@@ -68,7 +125,9 @@ async def _collect_context(
             usage_in=summary.usage_in,
             usage_out=summary.usage_out,
         )
-        _apply_billing(user_id, chat_id, model, summary.usage_in, summary.usage_out)
+        _apply_billing(
+            user_id, chat_id, model, summary.usage_in, summary.usage_out, 0
+        )
 
         tail = res[1:][-20:]
         res = [
@@ -97,9 +156,12 @@ def _apply_billing(
     model: str,
     usage_in: int,
     usage_out: int,
+    *,
+
+    cached_tokens: int = 0,
 ) -> tuple[int, int]:
     """Возвращает (billed, deficit)."""
-    billed = usage_to_toki(model, usage_in, usage_out)
+    billed = usage_to_toki(model, usage_in, usage_out, cached_tokens)
     billed = int(math.ceil(billed * settings.toki_spend_coeff))
     _spent_free, _spent_paid, deficit = storage.spend_tokens(user_id, billed)
     return billed, deficit
@@ -145,7 +207,9 @@ async def _maybe_compress_history(user_id: int, chat_id: int, model: str) -> Non
         usage_in=summary.usage_in,
         usage_out=summary.usage_out,
     )
-    _apply_billing(user_id, chat_id, model, summary.usage_in, summary.usage_out)
+    _apply_billing(
+        user_id, chat_id, model, summary.usage_in, summary.usage_out, 0
+    )
 
 
 async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
@@ -159,6 +223,7 @@ async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
         return ChatReply(text="⚠ Недостаточно токенов. Пополните счёт.")
 
     await _maybe_compress_history(user_id, chat_id, model)
+
 
     messages = await _collect_context(
         chat_id, user_id=user_id, model=model, query=text
@@ -175,10 +240,19 @@ async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
 
     usage_in = int(r.usage_in or 0)
     usage_out = int(r.usage_out or 0)
-    billed, deficit = _apply_billing(user_id, chat_id, model, usage_in, usage_out)
-    cost_in, cost_out, cost_cache, cost_total = calc_usage_cost_rub(
-        model, usage_in, usage_out
+    billed, deficit = _apply_billing(
+        user_id, chat_id, model, usage_in, usage_out, cached_tokens=cached_tokens
     )
+    if deficit > 0:
+        return ChatReply(
+            text="⚠ Баланс токенов на нуле. Пополните баланс, чтобы продолжить комфортно.",
+            usage_in=usage_in,
+            usage_out=usage_out,
+            billed=billed,
+            deficit=deficit,
+        )
+
+    storage.set_cached_tokens(chat_id, usage_in + usage_out)
 
     return ChatReply(
         text=out_text,
@@ -187,6 +261,7 @@ async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
         billed=billed,
         deficit=deficit,
     )
+
 
 
 async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[dict[str, str], None]:
@@ -214,6 +289,7 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[d
 
     await _maybe_compress_history(user_id, chat_id, model)
 
+
     messages = await _collect_context(
         chat_id, user_id=user_id, model=model, query=text
     )
@@ -232,20 +308,32 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[d
                 usage_in = int(ev.get("in") or 0)
                 usage_out = int(ev.get("out") or 0)
                 billed, deficit = _apply_billing(
-                    user_id, chat_id, model, usage_in, usage_out
+                    user_id,
+                    chat_id,
+                    model,
+                    usage_in,
+                    usage_out,
+                    cached_tokens=cached_tokens,
                 )
-                cost_in, cost_out, cost_cache, cost_total = calc_usage_cost_rub(
-                    model, usage_in, usage_out
-                )
+                if deficit > 0:
+                    yield {
+                        "kind": "final",
+                        "text": "⚠ Баланс токенов на нуле. Пополните баланс, чтобы продолжить комфортно.",
+                        "usage_in": str(usage_in),
+                        "usage_out": str(usage_out),
+                        "billed": str(billed),
+                        "deficit": str(deficit),
+                    }
+                else:
+                    storage.set_cached_tokens(chat_id, usage_in + usage_out)
+                    yield {
+                        "kind": "final",
+                        "usage_in": str(usage_in),
+                        "usage_out": str(usage_out),
+                        "billed": str(billed),
+                        "deficit": str(deficit),
+                    }
 
-
-                yield {
-                    "kind": "final",
-                    "usage_in": str(usage_in),
-                    "usage_out": str(usage_out),
-                    "billed": str(billed),
-                    "deficit": str(deficit),
-                }
     except Exception:
         logger.exception("live_stream failed")
         storage.set_user_chatting(user_id, False)

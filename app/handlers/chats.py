@@ -564,19 +564,20 @@ async def chatting_text(msg: Message):
                             await asyncio.sleep(FALLBACK_FLUSH_SECONDS)
                     usage_in = int(ev.get("usage_in") or 0)
                     usage_out = int(ev.get("usage_out") or 0)
-                    _storage().add_message(
-                        chat_id,
-                        is_user=False,
-                        content=full,
-                        usage_in=usage_in,
-                        usage_out=usage_out,
-                    )
-                    if FEATURE_USAGE_MSG:
-                        await msg.answer(
-                            f"usage_in: {usage_in}, usage_out: {usage_out}"
-                        )
                     if int(ev.get("deficit") or 0) > 0:
                         await msg.answer("⚠ Баланс токенов на нуле. Пополните баланс, чтобы продолжить комфортно.")
+                    else:
+                        _storage().add_message(
+                            chat_id,
+                            is_user=False,
+                            content=full,
+                            usage_in=usage_in,
+                            usage_out=usage_out,
+                        )
+                        if FEATURE_USAGE_MSG:
+                            await msg.answer(
+                                f"usage_in: {usage_in}, usage_out: {usage_out}"
+                            )
                                 # ответ в live завершён — теперь стартуем таймер «10 минут тишины»
 
                     schedule_silence_check(msg.from_user.id, chat_id, delay_sec=600)
@@ -586,20 +587,21 @@ async def chatting_text(msg: Message):
 
             r = await chat_turn(msg.from_user.id, chat_id, user_text)
 
-            _storage().add_message(
-                chat_id,
-                is_user=False,
-                content=r.text,
-                usage_in=r.usage_in,
-                usage_out=r.usage_out,
-            )
-            await msg.answer(r.text)
-            if FEATURE_USAGE_MSG:
-                await msg.answer(
-                    f"usage_in: {r.usage_in}, usage_out: {r.usage_out}"
-                )
             if r.deficit > 0:
-                await msg.answer("⚠ Баланс токенов на нуле. Пополните баланс, чтобы продолжить комфортно.")
+                await msg.answer(r.text)
+            else:
+                _storage().add_message(
+                    chat_id,
+                    is_user=False,
+                    content=r.text,
+                    usage_in=r.usage_in,
+                    usage_out=r.usage_out,
+                )
+                await msg.answer(r.text)
+                if FEATURE_USAGE_MSG:
+                    await msg.answer(
+                        f"usage_in: {r.usage_in}, usage_out: {r.usage_out}"
+                    )
             schedule_silence_check(msg.from_user.id, chat_id, delay_sec=600)
 
     finally:
