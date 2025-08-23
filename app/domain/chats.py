@@ -154,6 +154,9 @@ async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
     toks_limit, char_limit = DEFAULT_TOKENS_LIMIT, DEFAULT_CHAR_LIMIT
     model = (user.get("default_model") or settings.default_model)
 
+    balance = int(user.get("free_toki") or 0) + int(user.get("paid_tokens") or 0)
+    if balance <= 0:
+        return ChatReply(text="⚠ Недостаточно токенов. Пополните счёт.")
 
     await _maybe_compress_history(user_id, chat_id, model)
 
@@ -197,6 +200,17 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[d
     toks_limit, _ = _size_caps(str(resp_size))
     model = (user.get("default_model") or settings.default_model)
 
+    balance = int(user.get("free_toki") or 0) + int(user.get("paid_tokens") or 0)
+    if balance <= 0:
+        yield {
+            "kind": "final",
+            "text": "⚠ Недостаточно токенов. Пополните счёт.",
+            "usage_in": "0",
+            "usage_out": "0",
+            "billed": "0",
+            "deficit": "0",
+        }
+        return
 
     await _maybe_compress_history(user_id, chat_id, model)
 
