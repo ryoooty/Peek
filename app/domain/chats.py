@@ -134,6 +134,7 @@ async def _collect_context(
             cached_tokens=0,
         )
 
+
         tail = res[1:][-20:]
         res = [
             dict(role="system", content=system_prompt),
@@ -241,6 +242,7 @@ async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
     messages = await _collect_context(
         chat_id, user_id=user_id, model=model, query=text
     )
+
     messages += [dict(role="user", content=text)]
     r = await provider_chat(
         model=model,
@@ -302,12 +304,14 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[d
         }
         return
 
+
     await _maybe_compress_history(user_id, chat_id, model)
 
 
     messages = await _collect_context(
         chat_id, user_id=user_id, model=model, query=text
     )
+
     messages += [dict(role="user", content=text)]
     try:
         async for ev in provider_stream(
