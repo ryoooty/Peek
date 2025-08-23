@@ -8,6 +8,7 @@ from typing import AsyncGenerator
 
 from app import storage
 from app.billing.tokens import usage_to_toki
+from app.billing.pricing import calc_usage_cost_rub
 from app.config import settings
 from app.providers.deepseek_openai import (
     chat as provider_chat,
