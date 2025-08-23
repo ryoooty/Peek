@@ -125,6 +125,7 @@ async def _collect_context(
             usage_in=summary.usage_in,
             usage_out=summary.usage_out,
         )
+
         _apply_billing(
             user_id,
             chat_id,
@@ -212,16 +213,24 @@ async def _maybe_compress_history(user_id: int, chat_id: int, model: str) -> Non
         usage_in=summary.usage_in,
         usage_out=summary.usage_out,
     )
+
     _apply_billing(
-        user_id, chat_id, model, summary.usage_in, summary.usage_out, 0
+        user_id,
+        chat_id,
+        model,
+        summary.usage_in,
+        summary.usage_out,
+        cached_tokens=0,
     )
 
 
 async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
     user = storage.get_user(user_id) or {}
     storage.get_chat(chat_id)  # ensure chat exists
+    cached_tokens = storage.get_cached_tokens(chat_id)
     toks_limit, char_limit = DEFAULT_TOKENS_LIMIT, DEFAULT_CHAR_LIMIT
     model = (user.get("default_model") or settings.default_model)
+
 
     balance = int(user.get("free_toki") or 0) + int(user.get("paid_tokens") or 0)
     if balance <= 0:
@@ -232,11 +241,11 @@ async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
 
     await _maybe_compress_history(user_id, chat_id, model)
 
-    cached_tokens = storage.get_cached_tokens(chat_id)
 
     messages = await _collect_context(
         chat_id, user_id=user_id, model=model, query=text
     )
+
     messages += [dict(role="user", content=text)]
     r = await provider_chat(
         model=model,
@@ -280,11 +289,13 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[d
     """
     user = storage.get_user(user_id) or {}
     ch = storage.get_chat(chat_id) or {}
+    cached_tokens = storage.get_cached_tokens(chat_id)
     resp_size = (ch.get("resp_size") or "auto")
     toks_limit, _ = _size_caps(str(resp_size))
     model = (user.get("default_model") or settings.default_model)
 
     balance = int(user.get("free_toki") or 0) + int(user.get("paid_tokens") or 0)
+
     if balance <= 0:
         yield {
             "kind": "final",
@@ -298,11 +309,11 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[d
 
     await _maybe_compress_history(user_id, chat_id, model)
 
-    cached_tokens = storage.get_cached_tokens(chat_id)
 
     messages = await _collect_context(
         chat_id, user_id=user_id, model=model, query=text
     )
+
     messages += [dict(role="user", content=text)]
     try:
         async for ev in provider_stream(
