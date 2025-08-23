@@ -20,9 +20,22 @@ def usage_to_toki(
 
     """Convert token usage to internal ``toki`` billing units.
 
-    ``cached_tokens`` represents the previously billed total (input + output)
-    for a chat. Only the difference between the current total and the cached
-    value will be billed.
+    ``cached_tokens`` is the amount of tokens already billed for this chat.
+    When a request reuses part of the previous context we don't charge the
+    full input price for those tokens again.  Instead they are billed at a
+    separate ``cache`` rate defined by the model tariff.
+
+    Billing steps:
+
+    * ``effective_in`` – new input tokens beyond the cached total – is
+      calculated as ``max(in_tokens - cached_tokens, 0)``.
+    * ``delta`` – total new tokens (input + output) – is
+      ``max(in_tokens + out_tokens - cached_tokens, 0)``.
+    * The new input/output portions are ``effective_in`` and
+      ``delta - effective_in`` respectively.
+    * The final ``toki`` amount is computed from these portions using the
+      tariff rates and adding a cache component
+      ``cached_tokens * tariff.cache_per_1k``.
 
     Args:
         model: Identifier of the model used for the request.
@@ -35,23 +48,24 @@ def usage_to_toki(
         Number of billable ``toki`` units. Returns 0 if there is no new usage.
     """
     total = int(in_tokens) + int(out_tokens)
-    delta = max(0, total - int(cached_tokens))
+    cached_tokens = int(cached_tokens)
+    delta = max(0, total - cached_tokens)
     if delta <= 0:
         return 0
 
-    # Split the delta proportionally between input and output usage to preserve
-    # their relative pricing.
-    in_ratio = (in_tokens / total) if total else 0
-    in_delta = int(round(delta * in_ratio))
+    # Portion of new tokens that comes from the fresh input.
+    effective_in = max(int(in_tokens) - cached_tokens, 0)
+    in_delta = effective_in
     out_delta = delta - in_delta
 
     s = _settings()
     tariff = s.model_tariffs.get(model) or s.model_tariffs.get(s.default_model)
-    effective_in = max(0, in_tokens - cached_tokens)
     if not tariff:
         return in_delta + out_delta
-    units = (
-        in_delta * tariff.input_per_1k + out_delta * tariff.output_per_1k
 
+    units = (
+        in_delta * float(tariff.input_per_1k)
+        + out_delta * float(tariff.output_per_1k)
+        + cached_tokens * float(tariff.cache_per_1k)
     ) / 1000.0
     return max(1, int(math.ceil(units)))
