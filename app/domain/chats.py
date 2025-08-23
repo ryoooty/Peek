@@ -20,6 +20,62 @@ logger = logging.getLogger(__name__)
 DEFAULT_TOKENS_LIMIT = 700
 DEFAULT_CHAR_LIMIT = 900
 
+
+def _size_caps(resp_size: str) -> tuple[int, int]:
+    """Return token/char caps for a given ``resp_size`` value.
+
+    ``resp_size`` can be one of predefined aliases (e.g. ``"short"``,
+    ``"long"``) or a string with explicit numbers like ``"500:800"`` where
+    the first value denotes the token limit and the second one – character
+    limit.  Unknown or malformed values fall back to the default limits.
+    """
+
+    if not resp_size:
+        return DEFAULT_TOKENS_LIMIT, DEFAULT_CHAR_LIMIT
+
+    rs = resp_size.strip().lower()
+
+    # Predefined presets.  The exact numbers are not critical for the
+    # application logic; they merely provide a few handy shortcuts while
+    # keeping defaults as a safe fallback.
+    presets: dict[str, tuple[int, int]] = {
+        "auto": (DEFAULT_TOKENS_LIMIT, DEFAULT_CHAR_LIMIT),
+        "default": (DEFAULT_TOKENS_LIMIT, DEFAULT_CHAR_LIMIT),
+        "short": (350, 500),
+        "medium": (DEFAULT_TOKENS_LIMIT, DEFAULT_CHAR_LIMIT),
+        "long": (1000, 1500),
+        "xs": (200, 300),
+        "s": (350, 500),
+        "m": (DEFAULT_TOKENS_LIMIT, DEFAULT_CHAR_LIMIT),
+        "l": (1000, 1500),
+        "xl": (1500, 2000),
+    }
+
+    if rs in presets:
+        return presets[rs]
+
+    # Attempt to parse explicit numeric values. Supported separators: ``:``,
+    # ``/`` and ``,``.  If only a single number is provided we interpret it as
+    # the token limit and keep the character limit at default.
+    for sep in (":", "/", ",", "x", " "):
+        if sep in rs:
+            tok_s, char_s = rs.split(sep, 1)
+            try:
+                toks = int(tok_s)
+            except ValueError:
+                toks = DEFAULT_TOKENS_LIMIT
+            try:
+                chars = int(char_s)
+            except ValueError:
+                chars = DEFAULT_CHAR_LIMIT
+            return toks, chars
+
+    try:
+        toks = int(rs)
+        return toks, DEFAULT_CHAR_LIMIT
+    except ValueError:
+        return DEFAULT_TOKENS_LIMIT, DEFAULT_CHAR_LIMIT
+
 @dataclass
 class ChatReply:
     text: str
@@ -150,8 +206,9 @@ async def _maybe_compress_history(user_id: int, chat_id: int, model: str) -> Non
 
 async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
     user = storage.get_user(user_id) or {}
-    storage.get_chat(chat_id)  # ensure chat exists
-    toks_limit, char_limit = DEFAULT_TOKENS_LIMIT, DEFAULT_CHAR_LIMIT
+    ch = storage.get_chat(chat_id) or {}
+    resp_size = str(ch.get("resp_size") or "auto")
+    toks_limit, char_limit = _size_caps(resp_size)
     model = (user.get("default_model") or settings.default_model)
 
 
@@ -193,8 +250,8 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[d
     """
     user = storage.get_user(user_id) or {}
     ch = storage.get_chat(chat_id) or {}
-    resp_size = (ch.get("resp_size") or "auto")
-    toks_limit, _ = _size_caps(str(resp_size))
+    resp_size = str(ch.get("resp_size") or "auto")
+    toks_limit, _ = _size_caps(resp_size)
     model = (user.get("default_model") or settings.default_model)
 
 
