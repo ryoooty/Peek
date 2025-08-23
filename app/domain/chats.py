@@ -125,7 +125,9 @@ async def _collect_context(
             usage_in=summary.usage_in,
             usage_out=summary.usage_out,
         )
-        _apply_billing(user_id, chat_id, model, summary.usage_in, summary.usage_out)
+        _apply_billing(
+            user_id, chat_id, model, summary.usage_in, summary.usage_out, 0
+        )
 
         tail = res[1:][-20:]
         res = [
@@ -154,9 +156,10 @@ def _apply_billing(
     model: str,
     usage_in: int,
     usage_out: int,
+    cached_tokens: int = 0,
 ) -> tuple[int, int]:
     """Возвращает (billed, deficit)."""
-    billed = usage_to_toki(model, usage_in, usage_out)
+    billed = usage_to_toki(model, usage_in, usage_out, cached_tokens)
     billed = int(math.ceil(billed * settings.toki_spend_coeff))
     _spent_free, _spent_paid, deficit = storage.spend_tokens(user_id, billed)
     return billed, deficit
@@ -202,7 +205,9 @@ async def _maybe_compress_history(user_id: int, chat_id: int, model: str) -> Non
         usage_in=summary.usage_in,
         usage_out=summary.usage_out,
     )
-    _apply_billing(user_id, chat_id, model, summary.usage_in, summary.usage_out)
+    _apply_billing(
+        user_id, chat_id, model, summary.usage_in, summary.usage_out, 0
+    )
 
 
 async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
@@ -230,7 +235,9 @@ async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
 
     usage_in = int(r.usage_in or 0)
     usage_out = int(r.usage_out or 0)
-    billed, deficit = _apply_billing(user_id, chat_id, model, usage_in, usage_out)
+    billed, deficit = _apply_billing(
+        user_id, chat_id, model, usage_in, usage_out, 0
+    )
     cost_in, cost_out, cost_cache, cost_total = calc_usage_cost_rub(
         model, usage_in, usage_out
     )
@@ -276,7 +283,7 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[d
                 usage_in = int(ev.get("in") or 0)
                 usage_out = int(ev.get("out") or 0)
                 billed, deficit = _apply_billing(
-                    user_id, chat_id, model, usage_in, usage_out
+                    user_id, chat_id, model, usage_in, usage_out, 0
                 )
                 cost_in, cost_out, cost_cache, cost_total = calc_usage_cost_rub(
                     model, usage_in, usage_out
