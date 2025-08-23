@@ -126,7 +126,12 @@ async def _collect_context(
             usage_out=summary.usage_out,
         )
         _apply_billing(
-            user_id, chat_id, model, summary.usage_in, summary.usage_out, 0
+            user_id,
+            chat_id,
+            model,
+            summary.usage_in,
+            summary.usage_out,
+            cached_tokens=0,
         )
 
         tail = res[1:][-20:]
@@ -220,10 +225,14 @@ async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
 
     balance = int(user.get("free_toki") or 0) + int(user.get("paid_tokens") or 0)
     if balance <= 0:
-        return ChatReply(text="⚠ Недостаточно токенов. Пополните счёт.")
+        return ChatReply(
+            text="⚠ Баланс токенов на нуле. Пополните баланс, чтобы продолжить комфортно.",
+            deficit=1,
+        )
 
     await _maybe_compress_history(user_id, chat_id, model)
 
+    cached_tokens = storage.get_cached_tokens(chat_id)
 
     messages = await _collect_context(
         chat_id, user_id=user_id, model=model, query=text
@@ -279,16 +288,17 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[d
     if balance <= 0:
         yield {
             "kind": "final",
-            "text": "⚠ Недостаточно токенов. Пополните счёт.",
+            "text": "⚠ Баланс токенов на нуле. Пополните баланс, чтобы продолжить комфортно.",
             "usage_in": "0",
             "usage_out": "0",
             "billed": "0",
-            "deficit": "0",
+            "deficit": "1",
         }
         return
 
     await _maybe_compress_history(user_id, chat_id, model)
 
+    cached_tokens = storage.get_cached_tokens(chat_id)
 
     messages = await _collect_context(
         chat_id, user_id=user_id, model=model, query=text
