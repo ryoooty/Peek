@@ -125,6 +125,7 @@ async def _collect_context(
             usage_in=summary.usage_in,
             usage_out=summary.usage_out,
         )
+
         _apply_billing(
             user_id,
             chat_id,
@@ -212,6 +213,7 @@ async def _maybe_compress_history(user_id: int, chat_id: int, model: str) -> Non
         usage_in=summary.usage_in,
         usage_out=summary.usage_out,
     )
+
     _apply_billing(
         user_id,
         chat_id,
@@ -229,6 +231,7 @@ async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
     toks_limit, char_limit = DEFAULT_TOKENS_LIMIT, DEFAULT_CHAR_LIMIT
     model = (user.get("default_model") or settings.default_model)
 
+
     balance = int(user.get("free_toki") or 0) + int(user.get("paid_tokens") or 0)
     if balance <= 0:
         return ChatReply(
@@ -242,6 +245,7 @@ async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
     messages = await _collect_context(
         chat_id, user_id=user_id, model=model, query=text
     )
+
     messages += [dict(role="user", content=text)]
     r = await provider_chat(
         model=model,
@@ -291,6 +295,7 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[d
     model = (user.get("default_model") or settings.default_model)
 
     balance = int(user.get("free_toki") or 0) + int(user.get("paid_tokens") or 0)
+
     if balance <= 0:
         yield {
             "kind": "final",
@@ -308,6 +313,7 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[d
     messages = await _collect_context(
         chat_id, user_id=user_id, model=model, query=text
     )
+
     messages += [dict(role="user", content=text)]
     try:
         async for ev in provider_stream(

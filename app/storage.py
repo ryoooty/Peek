@@ -686,15 +686,6 @@ def toggle_fav_chat(user_id: int, chat_id: int, *, allow_max: int) -> bool:
     return True
 
 
-def get_cached_tokens(chat_id: int) -> int:
-    r = _q("SELECT cached_tokens FROM chats WHERE id=?", (chat_id,)).fetchone()
-    return int(r["cached_tokens"] or 0) if r else 0
-
-
-def set_cached_tokens(chat_id: int, value: int) -> None:
-    _exec("UPDATE chats SET cached_tokens=? WHERE id=?", (int(value), chat_id))
-
-
 def add_message(
     chat_id: int,
     *,
