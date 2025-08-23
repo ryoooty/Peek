@@ -8,6 +8,7 @@ from typing import AsyncGenerator
 
 from app import storage
 from app.billing.tokens import usage_to_toki
+from app.billing.pricing import calc_usage_cost_rub
 from app.config import settings
 from app.providers.deepseek_openai import (
     chat as provider_chat,
@@ -19,6 +20,62 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_TOKENS_LIMIT = 700
 DEFAULT_CHAR_LIMIT = 900
+
+
+def _size_caps(resp_size: str) -> tuple[int, int]:
+    """Return token/char caps for a given ``resp_size`` value.
+
+    ``resp_size`` can be one of predefined aliases (e.g. ``"short"``,
+    ``"long"``) or a string with explicit numbers like ``"500:800"`` where
+    the first value denotes the token limit and the second one – character
+    limit.  Unknown or malformed values fall back to the default limits.
+    """
+
+    if not resp_size:
+        return DEFAULT_TOKENS_LIMIT, DEFAULT_CHAR_LIMIT
+
+    rs = resp_size.strip().lower()
+
+    # Predefined presets.  The exact numbers are not critical for the
+    # application logic; they merely provide a few handy shortcuts while
+    # keeping defaults as a safe fallback.
+    presets: dict[str, tuple[int, int]] = {
+        "auto": (DEFAULT_TOKENS_LIMIT, DEFAULT_CHAR_LIMIT),
+        "default": (DEFAULT_TOKENS_LIMIT, DEFAULT_CHAR_LIMIT),
+        "short": (350, 500),
+        "medium": (DEFAULT_TOKENS_LIMIT, DEFAULT_CHAR_LIMIT),
+        "long": (1000, 1500),
+        "xs": (200, 300),
+        "s": (350, 500),
+        "m": (DEFAULT_TOKENS_LIMIT, DEFAULT_CHAR_LIMIT),
+        "l": (1000, 1500),
+        "xl": (1500, 2000),
+    }
+
+    if rs in presets:
+        return presets[rs]
+
+    # Attempt to parse explicit numeric values. Supported separators: ``:``,
+    # ``/`` and ``,``.  If only a single number is provided we interpret it as
+    # the token limit and keep the character limit at default.
+    for sep in (":", "/", ",", "x", " "):
+        if sep in rs:
+            tok_s, char_s = rs.split(sep, 1)
+            try:
+                toks = int(tok_s)
+            except ValueError:
+                toks = DEFAULT_TOKENS_LIMIT
+            try:
+                chars = int(char_s)
+            except ValueError:
+                chars = DEFAULT_CHAR_LIMIT
+            return toks, chars
+
+    try:
+        toks = int(rs)
+        return toks, DEFAULT_CHAR_LIMIT
+    except ValueError:
+        return DEFAULT_TOKENS_LIMIT, DEFAULT_CHAR_LIMIT
 
 @dataclass
 class ChatReply:
@@ -68,7 +125,9 @@ async def _collect_context(
             usage_in=summary.usage_in,
             usage_out=summary.usage_out,
         )
-        _apply_billing(user_id, chat_id, model, summary.usage_in, summary.usage_out)
+        _apply_billing(
+            user_id, chat_id, model, summary.usage_in, summary.usage_out, 0
+        )
 
         tail = res[1:][-20:]
         res = [
@@ -98,6 +157,7 @@ def _apply_billing(
     usage_in: int,
     usage_out: int,
     *,
+
     cached_tokens: int = 0,
 ) -> tuple[int, int]:
     """Возвращает (billed, deficit)."""
@@ -147,7 +207,9 @@ async def _maybe_compress_history(user_id: int, chat_id: int, model: str) -> Non
         usage_in=summary.usage_in,
         usage_out=summary.usage_out,
     )
-    _apply_billing(user_id, chat_id, model, summary.usage_in, summary.usage_out)
+    _apply_billing(
+        user_id, chat_id, model, summary.usage_in, summary.usage_out, 0
+    )
 
 
 async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
@@ -164,6 +226,7 @@ async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
         )
 
     cached_tokens = storage.get_cached_tokens(chat_id)
+
 
 
     await _maybe_compress_history(user_id, chat_id, model)
@@ -206,6 +269,7 @@ async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
     )
 
 
+
 async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[dict[str, str], None]:
     """
     Live-режим: отдаём сырые дельты текста + финальные usage.
@@ -230,6 +294,7 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[d
         return
 
     cached_tokens = storage.get_cached_tokens(chat_id)
+
 
 
     await _maybe_compress_history(user_id, chat_id, model)
@@ -277,6 +342,7 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[d
                         "billed": str(billed),
                         "deficit": str(deficit),
                     }
+
     except Exception:
         logger.exception("live_stream failed")
         storage.set_user_chatting(user_id, False)
