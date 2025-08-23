@@ -200,6 +200,7 @@ def _migrate() -> None:
         user_id       INTEGER NOT NULL,
         char_id       INTEGER NOT NULL,
         mode          TEXT DEFAULT 'rp',
+
         min_delay_ms  INTEGER DEFAULT 0,
         seq_no        INTEGER,
         is_favorite   INTEGER DEFAULT 0,
@@ -223,6 +224,7 @@ def _migrate() -> None:
 
     )"""
     )
+
     if not _has_col("chats", "is_favorite"):
         _exec("ALTER TABLE chats ADD COLUMN is_favorite INTEGER DEFAULT 0")
     if not _has_col("chats", "cached_tokens"):
@@ -600,6 +602,17 @@ def get_chat(chat_id: int) -> Dict[str, Any] | None:
         (chat_id,),
     ).fetchone()
     return dict(r) if r else None
+
+
+def get_cached_tokens(chat_id: int) -> int:
+    """Return previously cached total tokens for the chat."""
+    row = _q("SELECT cached_tokens FROM chats WHERE id=?", (chat_id,)).fetchone()
+    return int(row["cached_tokens"] if row and row["cached_tokens"] is not None else 0)
+
+
+def set_cached_tokens(chat_id: int, amount: int) -> None:
+    """Store total token usage for the chat."""
+    _exec("UPDATE chats SET cached_tokens=? WHERE id=?", (int(amount), chat_id))
 
 
 def list_user_chats(user_id: int, *, page: int, page_size: int) -> List[Dict[str, Any]]:
