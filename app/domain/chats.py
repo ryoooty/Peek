@@ -126,7 +126,12 @@ async def _collect_context(
             usage_out=summary.usage_out,
         )
         _apply_billing(
-            user_id, chat_id, model, summary.usage_in, summary.usage_out, 0
+            user_id,
+            chat_id,
+            model,
+            summary.usage_in,
+            summary.usage_out,
+            cached_tokens=0,
         )
 
         tail = res[1:][-20:]
@@ -208,19 +213,28 @@ async def _maybe_compress_history(user_id: int, chat_id: int, model: str) -> Non
         usage_out=summary.usage_out,
     )
     _apply_billing(
-        user_id, chat_id, model, summary.usage_in, summary.usage_out, 0
+        user_id,
+        chat_id,
+        model,
+        summary.usage_in,
+        summary.usage_out,
+        cached_tokens=0,
     )
 
 
 async def chat_turn(user_id: int, chat_id: int, text: str) -> ChatReply:
     user = storage.get_user(user_id) or {}
     storage.get_chat(chat_id)  # ensure chat exists
+    cached_tokens = storage.get_cached_tokens(chat_id)
     toks_limit, char_limit = DEFAULT_TOKENS_LIMIT, DEFAULT_CHAR_LIMIT
     model = (user.get("default_model") or settings.default_model)
 
     balance = int(user.get("free_toki") or 0) + int(user.get("paid_tokens") or 0)
     if balance <= 0:
-        return ChatReply(text="⚠ Недостаточно токенов. Пополните счёт.")
+        return ChatReply(
+            text="⚠ Баланс токенов на нуле. Пополните баланс, чтобы продолжить комфортно.",
+            deficit=1,
+        )
 
     await _maybe_compress_history(user_id, chat_id, model)
 
@@ -271,6 +285,7 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[d
     """
     user = storage.get_user(user_id) or {}
     ch = storage.get_chat(chat_id) or {}
+    cached_tokens = storage.get_cached_tokens(chat_id)
     resp_size = (ch.get("resp_size") or "auto")
     toks_limit, _ = _size_caps(str(resp_size))
     model = (user.get("default_model") or settings.default_model)
@@ -279,11 +294,11 @@ async def live_stream(user_id: int, chat_id: int, text: str) -> AsyncGenerator[d
     if balance <= 0:
         yield {
             "kind": "final",
-            "text": "⚠ Недостаточно токенов. Пополните счёт.",
+            "text": "⚠ Баланс токенов на нуле. Пополните баланс, чтобы продолжить комфортно.",
             "usage_in": "0",
             "usage_out": "0",
             "billed": "0",
-            "deficit": "0",
+            "deficit": "1",
         }
         return
 
