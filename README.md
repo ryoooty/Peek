@@ -1,4 +1,4 @@
-Вот пример улучшенного **README.md** для GitHub — с фокусом на описании, позиционировании и преимуществах проекта **Peek** перед аналогами вроде Character.AI:
+<img width="640" height="640" alt="image" src="https://github.com/user-attachments/assets/c88707fc-1014-4838-b0b0-816e81c05023" />
 
 ---
 
